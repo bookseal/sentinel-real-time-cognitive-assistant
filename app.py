@@ -528,6 +528,11 @@ def build_app() -> gr.Blocks:
         line-height: 1.6;
     }
 
+    .gradio-container h3, .gradio-container .markdown-text h3 {
+        color: #e2e8f0 !important;
+        font-weight: 600;
+    }
+
     footer { display: none !important; }
     """
 
@@ -548,51 +553,46 @@ def build_app() -> gr.Blocks:
             </div>
         """)
 
+        # WebSocket Connection
+        gr.Markdown("### 🔌 Connection")
         with gr.Row():
-            # Left Column: Controls
-            with gr.Column(scale=1):
-                # WebSocket Connection
-                gr.Markdown("### 🔌 Connection")
-                with gr.Row():
-                    connect_btn = gr.Button(
-                        "🟢 Connect", variant="primary", size="sm"
-                    )
-                    disconnect_btn = gr.Button(
-                        "🔴 Disconnect", variant="secondary", size="sm"
-                    )
-                conn_msg = gr.Textbox(
-                    label="Status",
-                    value="⚪ Disconnected",
-                    interactive=False,
-                    lines=1,
-                )
+            connect_btn = gr.Button(
+                "🟢 Connect", variant="primary", size="sm"
+            )
+            disconnect_btn = gr.Button(
+                "🔴 Disconnect", variant="secondary", size="sm"
+            )
+        conn_msg = gr.Textbox(
+            label="Status",
+            value="⚪ Disconnected",
+            interactive=False,
+            lines=1,
+        )
 
-                # Audio Input
-                gr.Markdown("### 🎤 Audio Input")
-                audio_input = gr.Audio(
-                    sources=["microphone"],
-                    streaming=True,
-                    label="Microphone",
-                    type="numpy",
-                )
+        # Audio Input
+        gr.Markdown("### 🎤 Audio Input")
+        audio_input = gr.Audio(
+            sources=["microphone"],
+            streaming=True,
+            label="Microphone",
+            type="numpy",
+        )
 
-                # Actions
-                gr.Markdown("### ⚡ Actions")
-                with gr.Row():
-                    clear_trans_btn = gr.Button("🗑️ Clear Transcript", size="sm")
-                    clear_buf_btn = gr.Button("🔄 Reset Buffer", size="sm")
+        # Actions
+        gr.Markdown("### ⚡ Actions")
+        with gr.Row():
+            clear_trans_btn = gr.Button("🗑️ Clear Transcript", size="sm")
+            clear_buf_btn = gr.Button("🔄 Reset Buffer", size="sm")
 
-            # Right Column: Dashboard
-            with gr.Column(scale=2):
-                # Status Dashboard
-                gr.Markdown("### 📊 Real-time Dashboard")
-                status_display = gr.HTML(value=generate_status_html())
+        # Status Dashboard
+        gr.Markdown("### 📊 Real-time Dashboard")
+        status_display = gr.HTML(value=generate_status_html())
 
-                # Transcript
-                gr.Markdown("### 📝 Transcript")
-                transcript_display = gr.Markdown(
-                    value="*Waiting for speech...*",
-                )
+        # Transcript
+        gr.Markdown("### 📝 Transcript")
+        transcript_display = gr.Markdown(
+            value="*Waiting for speech...*",
+        )
 
         # ── Event Wiring ──
         audio_input.stream(
