@@ -64,6 +64,52 @@ We follow the **"Feature Branch"** model to maintain codebase integrity.
 3. **WebSocket Handshake**: Establish a secure, bidirectional WebSocket connection to `api.openai.com/v1/realtime`.
 4. **Buffer Management**: Create a circular buffer to manage audio chunks and prevent memory leaks.
 
+#### Architectural Flow: Data Pipeline
+
+When a user connects to `https://sentinel.bit-habit.com`, the audio data travels through the following architectural layers before the UI is updated with STT and emotion scores.
+
+```mermaid
+sequenceDiagram
+    participant User as 🌐 Browser (User)
+    participant K8s as ☁️ K3s Ingress/Service
+    participant App as 🖥️ app.py (UI & Core)
+    participant VAD as 🔊 vad.py (Silence Filter)
+    participant Buffer as 💾 audio_buffer.py (Memory)
+    participant WS as 🚀 ws_client.py (WebSocket)
+    participant OpenAI as 🧠 OpenAI Realtime API
+
+    User->>K8s: 1. Connects to bit-habit.com
+    K8s->>App: Routes traffic to Pod (Port 7860)
+    User->>App: 2. Streams raw audio chunks (500ms)
+    App->>VAD: 3. Is this human speech?
+    alt Speech Detected (Prob > 0.5)
+        VAD-->>App: Yes!
+        App->>Buffer: 4. Push exact audio frames
+        App->>WS: Send valid audio frame
+        WS->>OpenAI: 5. Transmit via Base64 WSS
+        OpenAI-->>WS: Return STT delta & `report_emotion`
+        WS-->>App: Parse STT & Emotion Score
+        App-->>User: 6. Refresh UI Dashboard
+    else Silence
+        VAD-->>App: No (Ignore chunk)
+    end
+```
+
+**Step-by-Step Breakdown:**
+
+1. **🌐 Cloud Infrastructure Entry (`k8s/` & `Dockerfile`)**
+   Traffic reaching `sentinel.bit-habit.com` is intercepted by the Kubernetes (K3s) Ingress. The `ingress.yaml` and `service.yaml` route the external HTTPS requests into the secure Docker container deployed via `deployment.yaml`.
+2. **🖥️ Frontend UI & Audio Ingestion (`app.py`)**
+   Serving as the control center, `app.py` renders the Gradio interface. Once the user grants microphone access, it continuously captures 500ms audio chunks (PCM format) and manages the overarching state of the application.
+3. **🔊 Voice Activity Detection (`vad.py`)**
+   Acting as the analytical gatekeeper, the Silero-VAD model inspects every incoming chunk. It filters out silence and background noise, only allowing data to proceed if the speech probability exceeds the 0.5 threshold.
+4. **💾 Memory Management (`audio_buffer.py`)**
+   Valid speech chunks are safely stored inside a thread-safe Circular Queue buffer. This prevents memory overflow during long sessions by retaining only the recent context (e.g., 15 seconds capacity) and discarding old data.
+5. **🚀 OpenAI API Communication (`ws_client.py`)**
+   Concurrently, valid audio frames are converted to Base64 and pumped directly into a persistent WebSocket connection hooked specifically to the OpenAI Realtime API.
+6. **🔄 Instantaneous UI Updates**
+   As the user speaks, the `ws_client.py` receives async events (like `response.audio_transcript.delta` and the custom tool call `report_emotion`). `app.py` parses these values to immediately update the real-time textual transcript and the visual Emotional Arousal gauge on the dashboard.
+
 ### Phase 2: Cognitive Processing Layer (Sentiment & Intensity)
 
 1. **System Prompt Engineering**: Design a specialized prompt for the "Sentinel Agent".
