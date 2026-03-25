@@ -17,6 +17,7 @@ import numpy as np
 from dotenv import load_dotenv
 
 from audio_buffer import CircularAudioBuffer
+from audio_logic import get_rms_db, check_volume_threshold
 from vad import VoiceActivityDetector
 from ws_client import ConnectionStatus, RealtimeWSClient
 
@@ -54,6 +55,9 @@ app_state = {
     "emotion_score": 0.0,
     "ws_loop": None,
     "ws_thread": None,
+    "volume_db": 0.0,
+    "volume_history": [],
+    "volume_alert": "normal",
 }
 
 
@@ -185,10 +189,16 @@ def process_audio_chunk(audio_data):
     else:
         audio_16k = audio
 
-    # Compute RMS level
+    # Compute RMS level (linear for display bar)
     rms = compute_rms(audio_16k)
     app_state["rms_level"] = rms
     app_state["chunks_processed"] += 1
+
+    # Volume Guard: Local dB calculation (zero network overhead)
+    db_level = get_rms_db(audio_16k)
+    app_state["volume_db"] = db_level
+    vol_result = check_volume_threshold(app_state["volume_history"], db_level)
+    app_state["volume_alert"] = vol_result["alert_level"]
 
     # VAD check
     try:
@@ -233,8 +243,24 @@ def generate_status_html() -> str:
     speech_chunks = app_state["speech_chunks"]
     last_activity = app_state["last_activity"] or "—"
     emotion_score = app_state["emotion_score"]
+    volume_db = app_state["volume_db"]
+    volume_alert = app_state["volume_alert"]
     buffer_size = audio_buffer.size
     buffer_cap = audio_buffer.capacity
+
+    # Volume Alert indicator
+    if volume_alert == "red_alert":
+        vol_alert_color = "#ff1744"
+        vol_alert_text = "RED ALERT — SHOUTING DETECTED"
+        vol_alert_glow = "0 0 30px #ff1744, 0 0 60px #ff174488"
+    elif volume_alert == "warning":
+        vol_alert_color = "#ffab00"
+        vol_alert_text = "WARNING — Elevated Volume"
+        vol_alert_glow = "0 0 15px #ffab00"
+    else:
+        vol_alert_color = "transparent"
+        vol_alert_text = ""
+        vol_alert_glow = "none"
 
     # VAD indicator
     if vad_active:
@@ -273,6 +299,27 @@ def generate_status_html() -> str:
         color: #f5f5f5;
         border: 1px solid #4d4f66;
     ">
+        <!-- Volume Alert Banner (Phase 01) -->
+        {"" if volume_alert == "normal" else f'''
+        <div style="
+            text-align: center;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-radius: 10px;
+            background: {vol_alert_color}22;
+            border: 2px solid {vol_alert_color};
+            box-shadow: {vol_alert_glow};
+            animation: pulse 1s ease-in-out infinite alternate;
+        ">
+            <div style="font-size: 22px; font-weight: 700; color: {vol_alert_color};">
+                {vol_alert_text}
+            </div>
+            <div style="font-size: 13px; color: #ccc; margin-top: 4px;">
+                Volume: {volume_db:.1f} dB
+            </div>
+        </div>
+        '''}
+
         <!-- VAD Status -->
         <div style="
             text-align: center;
@@ -348,6 +395,38 @@ def generate_status_html() -> str:
                     width: {rms_pct:.1f}%;
                     height: 100%;
                     background: linear-gradient(90deg, {rms_color}88, {rms_color});
+                    border-radius: 8px;
+                    transition: width 0.1s ease;
+                "></div>
+            </div>
+        </div>
+
+        <!-- Volume dB Meter (Phase 01) -->
+        <div style="margin-bottom: 24px;">
+            <div style="
+                display: flex;
+                justify-content: space-between;
+                font-size: 13px;
+                color: #a4a9c0;
+                margin-bottom: 6px;
+            ">
+                <span>🔊 Volume (dB SPL)</span>
+                <span style="color: {'#ff1744' if volume_db >= 85 else '#ffab00' if volume_db >= 75 else '#00e676'}; font-weight: 600;">
+                    {volume_db:.1f} dB
+                </span>
+            </div>
+            <div style="
+                background: #111526;
+                border-radius: 8px;
+                height: 14px;
+                overflow: hidden;
+                border: 1px solid #3a3f5a;
+            ">
+                <div style="
+                    width: {min(max((volume_db - 30) / 70 * 100, 0), 100):.1f}%;
+                    height: 100%;
+                    background: linear-gradient(90deg,
+                        {'#ff174488, #ff1744' if volume_db >= 85 else '#ffab0088, #ffab00' if volume_db >= 75 else '#00e67688, #00e676'});
                     border-radius: 8px;
                     transition: width 0.1s ease;
                 "></div>
