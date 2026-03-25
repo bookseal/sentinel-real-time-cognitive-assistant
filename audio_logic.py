@@ -1,3 +1,15 @@
+# -----------------------------------------------------------------------------
+# audio_logic.py — Local Volume Guard for Sentinel
+#
+# Purpose: Provides zero-cost, zero-latency audio volume analysis using only
+#          NumPy. This module is the core of Phase 01's "Local vs. Cloud"
+#          strategy: instead of streaming audio to an API ($0.06/min), we
+#          compute Root Mean Square (RMS) energy locally ($0.00).
+#
+# Phase:   01 — Sensory Foundation
+# Dependencies: numpy (signal math)
+# -----------------------------------------------------------------------------
+
 """
 Audio Logic Module for Sentinel
 ================================
@@ -7,14 +19,36 @@ Zero network overhead — all computation is done with NumPy.
 
 import numpy as np
 
-# Volume threshold in dB for "shouting" detection
-SHOUT_THRESHOLD_DB = 85.0
-WARNING_THRESHOLD_DB = 75.0
+# -----------------------------------------------------------------------------
+# 1. Threshold Constants
+#
+# These thresholds map digital audio levels to approximate real-world Sound
+# Pressure Levels (SPL). 85 dB SPL is the OSHA threshold for hearing damage
+# risk, which correlates well with "shouting" in a meeting context.
+# 75 dB SPL is conversational-loud — enough to warrant a visual warning.
+# -----------------------------------------------------------------------------
+SHOUT_THRESHOLD_DB = 85.0     # Red Alert: shouting / extreme volume
+WARNING_THRESHOLD_DB = 75.0   # Yellow Warning: elevated volume
 
-# Reference amplitude for dB calculation (int16 max)
+# Reference amplitude — maximum value for 16-bit signed integer audio.
+# Used as the denominator when converting raw amplitude to 0.0–1.0 range.
 REF_AMPLITUDE = 32768.0
 
 
+# -----------------------------------------------------------------------------
+# 2. RMS Calculation — Decibel Scale
+#
+# The RMS formula measures the "average power" of an audio signal:
+#   X_rms = sqrt(1/n * sum(x_i^2))
+#
+# We then convert to decibels for human-readable thresholds:
+#   dB_FS  = 20 * log10(X_rms)         — decibels relative to full scale
+#   dB_SPL ≈ dB_FS + 94                — approximate Sound Pressure Level
+#
+# Why +94? In acoustic engineering, 0 dBFS (digital full scale) corresponds
+# roughly to 94 dB SPL (1 Pascal reference). This offset maps our digital
+# readings to the physical scale that humans intuitively understand.
+# -----------------------------------------------------------------------------
 def get_rms_db(audio_data: np.ndarray) -> float:
     """
     Calculate Root Mean Square (RMS) energy of audio in decibels (dB SPL approximation).
@@ -31,14 +65,18 @@ def get_rms_db(audio_data: np.ndarray) -> float:
     if audio_data is None or len(audio_data) == 0:
         return float("-inf")
 
+    # Use float64 to avoid precision loss during squaring of large int16 values
     audio_f = audio_data.astype(np.float64)
 
-    # Normalize integer types to float range
+    # Normalize integer audio (e.g., int16 range -32768..32767) to -1.0..1.0
+    # This ensures the dB calculation is independent of the input dtype
     if np.issubdtype(audio_data.dtype, np.integer):
         audio_f = audio_f / np.iinfo(audio_data.dtype).max
 
+    # Core RMS: square each sample, take the mean, then square root
     rms = np.sqrt(np.mean(audio_f ** 2))
 
+    # Guard against log(0) which would produce -inf or NaN
     if rms <= 0:
         return float("-inf")
 
@@ -50,6 +88,13 @@ def get_rms_db(audio_data: np.ndarray) -> float:
     return float(db_spl_approx)
 
 
+# -----------------------------------------------------------------------------
+# 3. RMS Calculation — Linear Scale
+#
+# A simplified version that returns raw amplitude (0.0 to 1.0) instead of dB.
+# Used by the UI to drive the visual audio level bar, where a linear scale
+# provides more intuitive visual feedback than logarithmic dB.
+# -----------------------------------------------------------------------------
 def get_rms_linear(audio_data: np.ndarray) -> float:
     """
     Calculate raw RMS amplitude (0.0 to 1.0 range).
@@ -70,6 +115,18 @@ def get_rms_linear(audio_data: np.ndarray) -> float:
     return float(np.sqrt(np.mean(audio_f ** 2)))
 
 
+# -----------------------------------------------------------------------------
+# 4. Volume Threshold Evaluation — Sliding Window Filter
+#
+# Instead of triggering alerts on a single audio chunk (which would cause
+# flickering alerts from momentary noise spikes), we maintain a sliding
+# window of the last 5 dB readings. The alert level is determined by the
+# AVERAGE across the window, acting as a low-pass filter on volume readings.
+#
+# Window size = 5 chunks × 500ms/chunk = 2.5 seconds of smoothing.
+# This means: a shout must be sustained for ~1-2 seconds before triggering
+# Red Alert, preventing false positives from door slams or coughs.
+# -----------------------------------------------------------------------------
 def check_volume_threshold(volume_history: list, current_db: float) -> dict:
     """
     Evaluate volume against thresholds using a sliding window.
@@ -79,6 +136,7 @@ def check_volume_threshold(volume_history: list, current_db: float) -> dict:
 
     Args:
         volume_history: List of recent dB values (sliding window).
+                        This list is mutated in-place (append + pop).
         current_db: Current chunk's dB level.
 
     Returns:
@@ -88,12 +146,13 @@ def check_volume_threshold(volume_history: list, current_db: float) -> dict:
             - peak_db: Peak dB in the window
             - current_db: The current reading
     """
-    # Update sliding window (keep last 5)
+    # Append new reading and enforce max window size of 5
     volume_history.append(current_db)
     if len(volume_history) > 5:
-        volume_history.pop(0)
+        volume_history.pop(0)  # Remove oldest reading (FIFO)
 
-    # Filter out -inf values for averaging
+    # Filter out -inf values (silence) before averaging — including them
+    # would drag the average to -inf and mask genuine loud readings
     valid_values = [v for v in volume_history if v != float("-inf")]
 
     if not valid_values:
@@ -107,13 +166,13 @@ def check_volume_threshold(volume_history: list, current_db: float) -> dict:
     avg_db = sum(valid_values) / len(valid_values)
     peak_db = max(valid_values)
 
-    # Determine alert level
+    # 3-state classification based on average volume across the window
     if avg_db >= SHOUT_THRESHOLD_DB:
-        alert_level = "red_alert"
+        alert_level = "red_alert"     # >= 85 dB: shouting detected
     elif avg_db >= WARNING_THRESHOLD_DB:
-        alert_level = "warning"
+        alert_level = "warning"       # >= 75 dB: elevated volume
     else:
-        alert_level = "normal"
+        alert_level = "normal"        # < 75 dB: conversational
 
     return {
         "alert_level": alert_level,
