@@ -142,9 +142,9 @@ class RealtimeWSClient:
                 "modalities": ["text", "audio"],
                 "instructions": (
                     "You are Sentinel, an emotional monitoring assistant. "
-                    "Listen to the audio input and transcribe it accurately. "
-                    "Monitor for signs of emotional arousal such as anger, "
-                    "stress, or aggression in the speaker's voice."
+                    "Listen to the user's speech. Every time the user finishes speaking, "
+                    "you must call the 'report_emotion' tool to report their emotional "
+                    "arousal score (0.0 to 1.0, where 1.0 is extreme anger or stress)."
                 ),
                 "input_audio_format": "pcm16",
                 "input_audio_transcription": {
@@ -156,6 +156,24 @@ class RealtimeWSClient:
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 500,
                 },
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "report_emotion",
+                        "description": "Report the emotional arousal of the user's last speech.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "score": {
+                                    "type": "number",
+                                    "description": "0.0 (calm) to 1.0 (extreme anger/stress)"
+                                }
+                            },
+                            "required": ["score"]
+                        }
+                    }
+                ],
+                "tool_choice": "auto",
             },
         }
         await self._send_event(config)

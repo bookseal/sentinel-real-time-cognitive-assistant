@@ -51,6 +51,7 @@ app_state = {
     "chunks_processed": 0,
     "speech_chunks": 0,
     "last_activity": None,
+    "emotion_score": 0.0,
     "ws_loop": None,
     "ws_thread": None,
 }
@@ -109,6 +110,16 @@ async def ws_receive_loop():
                 if delta:
                     app_state["transcript"] += delta
 
+            elif event_type == "response.function_call_arguments.done":
+                if event.get("name") == "report_emotion":
+                    try:
+                        args = json.loads(event.get("arguments", "{}"))
+                        if "score" in args:
+                            app_state["emotion_score"] = float(args["score"])
+                            logger.info(f"Emotion Score Updated: {app_state['emotion_score']}")
+                    except Exception as e:
+                        logger.error(f"Failed to parse emotion score: {e}")
+
             elif event_type == "error":
                 error = event.get("error", {})
                 logger.error(f"API Error: {error}")
@@ -160,7 +171,7 @@ def process_audio_chunk(audio_data):
     global vad
 
     if audio_data is None:
-        return generate_status_html()
+        return generate_status_html(), get_transcript()
 
     sample_rate, audio = audio_data
 
@@ -206,7 +217,7 @@ def process_audio_chunk(audio_data):
     except Exception as e:
         logger.error(f"Audio processing error: {e}")
 
-    return generate_status_html()
+    return generate_status_html(), get_transcript()
 
 
 # ──────────────────────────────────────────────
@@ -221,6 +232,7 @@ def generate_status_html() -> str:
     chunks = app_state["chunks_processed"]
     speech_chunks = app_state["speech_chunks"]
     last_activity = app_state["last_activity"] or "—"
+    emotion_score = app_state["emotion_score"]
     buffer_size = audio_buffer.size
     buffer_cap = audio_buffer.capacity
 
@@ -230,7 +242,7 @@ def generate_status_html() -> str:
         vad_text = "🎙️ SPEECH DETECTED"
         vad_glow = "0 0 20px #00e676, 0 0 40px #00e67688"
     else:
-        vad_color = "#555"
+        vad_color = "#aaa"
         vad_text = "🔇 Listening..."
         vad_glow = "none"
 
@@ -238,23 +250,28 @@ def generate_status_html() -> str:
     conn_colors = {
         "connected": ("#00e676", "🟢"),
         "connecting": ("#ffab00", "🟡"),
-        "disconnected": ("#777", "⚪"),
+        "disconnected": ("#aaa", "⚪"),
         "error": ("#ff1744", "🔴"),
     }
-    conn_color, conn_icon = conn_colors.get(conn_status, ("#777", "⚪"))
+    conn_color, conn_icon = conn_colors.get(conn_status, ("#aaa", "⚪"))
 
     # RMS bar (0 to 100%)
     rms_pct = min(rms * 500, 100)  # Scale for visibility
     rms_color = "#00e676" if rms_pct < 50 else "#ffab00" if rms_pct < 80 else "#ff1744"
 
+    # Emotion Gauge Bar Update
+    emotion_pct = min(max(emotion_score * 100, 0), 100)
+    # Emotion color transitions from green (0) to yellow (50) to red (100)
+    emotion_color = "#00e676" if emotion_pct < 40 else "#ffab00" if emotion_pct < 75 else "#ff1744"
+
     html = f"""
     <div style="
         font-family: 'Inter', 'Segoe UI', sans-serif;
-        background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 50%, #16213e 100%);
+        background: linear-gradient(135deg, #151a2e 0%, #1e213a 50%, #202a45 100%);
         border-radius: 16px;
         padding: 28px;
-        color: #e0e0e0;
-        border: 1px solid #333;
+        color: #f5f5f5;
+        border: 1px solid #4d4f66;
     ">
         <!-- VAD Status -->
         <div style="
@@ -262,7 +279,7 @@ def generate_status_html() -> str:
             padding: 24px;
             margin-bottom: 20px;
             border-radius: 12px;
-            background: linear-gradient(135deg, #111122, #1a1a30);
+            background: linear-gradient(135deg, #1a1e35, #242945);
             border: 2px solid {vad_color};
             box-shadow: {vad_glow};
             transition: all 0.3s ease;
@@ -270,31 +287,62 @@ def generate_status_html() -> str:
             <div style="font-size: 28px; font-weight: 700; color: {vad_color};">
                 {vad_text}
             </div>
-            <div style="font-size: 14px; color: #888; margin-top: 8px;">
+            <div style="font-size: 14px; color: #b0b4c4; margin-top: 8px;">
                 Speech Probability: <span style="color: {vad_color}; font-weight: 600;">
                     {speech_prob:.1%}
                 </span>
             </div>
         </div>
 
-        <!-- Audio Level Meter -->
+        <!-- Emotion Gauge -->
         <div style="margin-bottom: 20px;">
             <div style="
                 display: flex;
                 justify-content: space-between;
+                font-size: 14px;
+                font-weight: 600;
+                color: #d1d5e0;
+                margin-bottom: 6px;
+            ">
+                <span>🧠 Emotional Arousal</span>
+                <span style="color: {emotion_color};">{emotion_pct:.1f}%</span>
+            </div>
+            <div style="
+                background: #111526;
+                border-radius: 8px;
+                height: 18px;
+                overflow: hidden;
+                border: 1px solid #3a3f5a;
+                box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+            ">
+                <div style="
+                    width: {emotion_pct:.1f}%;
+                    height: 100%;
+                    background: linear-gradient(90deg, {emotion_color}aa, {emotion_color});
+                    border-radius: 8px;
+                    transition: width 0.3s ease-out, background 0.3s;
+                "></div>
+            </div>
+        </div>
+
+        <!-- Audio Level Meter -->
+        <div style="margin-bottom: 24px;">
+            <div style="
+                display: flex;
+                justify-content: space-between;
                 font-size: 13px;
-                color: #888;
+                color: #a4a9c0;
                 margin-bottom: 6px;
             ">
                 <span>📊 Audio Level (RMS)</span>
                 <span>{rms:.4f}</span>
             </div>
             <div style="
-                background: #1a1a2e;
+                background: #111526;
                 border-radius: 8px;
                 height: 14px;
                 overflow: hidden;
-                border: 1px solid #333;
+                border: 1px solid #3a3f5a;
             ">
                 <div style="
                     width: {rms_pct:.1f}%;
@@ -314,55 +362,55 @@ def generate_status_html() -> str:
             margin-bottom: 16px;
         ">
             <div style="
-                background: #111122;
+                background: #1a1e35;
                 padding: 14px;
                 border-radius: 10px;
-                border: 1px solid #2a2a3e;
+                border: 1px solid #3a3f5a;
             ">
-                <div style="font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                <div style="font-size: 12px; color: #9a9eb5; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
                     Connection
                 </div>
-                <div style="font-size: 16px; margin-top: 4px; color: {conn_color};">
+                <div style="font-size: 16px; font-weight: 500; margin-top: 4px; color: {conn_color};">
                     {conn_icon} {conn_status.upper()}
                 </div>
             </div>
             <div style="
-                background: #111122;
+                background: #1a1e35;
                 padding: 14px;
                 border-radius: 10px;
-                border: 1px solid #2a2a3e;
+                border: 1px solid #3a3f5a;
             ">
-                <div style="font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                <div style="font-size: 12px; color: #9a9eb5; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
                     Buffer
                 </div>
-                <div style="font-size: 16px; margin-top: 4px;">
-                    📦 {buffer_size}/{buffer_cap}
+                <div style="font-size: 16px; font-weight: 500; margin-top: 4px;">
+                    📦 <span style="color: #e2e8f0;">{buffer_size}/{buffer_cap}</span>
                 </div>
             </div>
             <div style="
-                background: #111122;
+                background: #1a1e35;
                 padding: 14px;
                 border-radius: 10px;
-                border: 1px solid #2a2a3e;
+                border: 1px solid #3a3f5a;
             ">
-                <div style="font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                <div style="font-size: 12px; color: #9a9eb5; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
                     Chunks Processed
                 </div>
-                <div style="font-size: 16px; margin-top: 4px;">
-                    🔢 {chunks}
+                <div style="font-size: 16px; font-weight: 500; margin-top: 4px;">
+                    🔢 <span style="color: #60a5fa;">{chunks}</span>
                 </div>
             </div>
             <div style="
-                background: #111122;
+                background: #1a1e35;
                 padding: 14px;
                 border-radius: 10px;
-                border: 1px solid #2a2a3e;
+                border: 1px solid #3a3f5a;
             ">
-                <div style="font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                <div style="font-size: 12px; color: #9a9eb5; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
                     Speech Chunks
                 </div>
-                <div style="font-size: 16px; margin-top: 4px;">
-                    🗣️ {speech_chunks}
+                <div style="font-size: 16px; font-weight: 500; margin-top: 4px;">
+                    🗣️ <span style="color: #34d399;">{speech_chunks}</span>
                 </div>
             </div>
         </div>
@@ -370,12 +418,13 @@ def generate_status_html() -> str:
         <!-- Last Activity -->
         <div style="
             text-align: center;
-            font-size: 12px;
-            color: #555;
-            padding-top: 8px;
-            border-top: 1px solid #222;
+            font-size: 13px;
+            color: #8b92b0;
+            padding-top: 12px;
+            border-top: 1px solid #3a3f5a;
+            font-weight: 500;
         ">
-            Last Speech Activity: {last_activity}
+            Last Speech Activity: <span style="color: #cad1e6;">{last_activity}</span>
         </div>
     </div>
     """
@@ -402,19 +451,19 @@ def connect_action():
     try:
         success = future.result(timeout=10)
         if success:
-            return "✅ Connected to OpenAI Realtime API", generate_status_html()
+            return "✅ Connected to OpenAI Realtime API", generate_status_html(), get_transcript()
         else:
-            return "❌ Connection failed. Check API key.", generate_status_html()
+            return "❌ Connection failed. Check API key.", generate_status_html(), get_transcript()
     except Exception as e:
         app_state["connection_status"] = "error"
-        return f"❌ Error: {str(e)}", generate_status_html()
+        return f"❌ Error: {str(e)}", generate_status_html(), get_transcript()
 
 
 def disconnect_action():
     """Handle disconnect button click."""
     if app_state.get("ws_loop"):
         asyncio.run_coroutine_threadsafe(disconnect_ws(), app_state["ws_loop"])
-    return "⚪ Disconnected", generate_status_html()
+    return "⚪ Disconnected", generate_status_html(), get_transcript()
 
 
 def clear_transcript():
@@ -428,8 +477,9 @@ def clear_buffer():
     audio_buffer.clear()
     app_state["chunks_processed"] = 0
     app_state["speech_chunks"] = 0
+    app_state["emotion_score"] = 0.0
     app_state["last_activity"] = None
-    return generate_status_html()
+    return generate_status_html(), get_transcript()
 
 
 # ──────────────────────────────────────────────
@@ -467,8 +517,15 @@ def build_app() -> gr.Blocks:
     }
 
     .app-header p {
-        color: #777;
-        font-size: 0.95em;
+        color: #a0a5b5;
+        font-size: 1.05em;
+    }
+
+    /* Enhance markdown contrast */
+    .gradio-container .markdown-text {
+        color: #e2e8f0 !important;
+        font-size: 1.05em;
+        line-height: 1.6;
     }
 
     footer { display: none !important; }
@@ -541,19 +598,19 @@ def build_app() -> gr.Blocks:
         audio_input.stream(
             fn=process_audio_chunk,
             inputs=[audio_input],
-            outputs=[status_display],
+            outputs=[status_display, transcript_display],
         )
 
         connect_btn.click(
             fn=connect_action,
             inputs=[],
-            outputs=[conn_msg, status_display],
+            outputs=[conn_msg, status_display, transcript_display],
         )
 
         disconnect_btn.click(
             fn=disconnect_action,
             inputs=[],
-            outputs=[conn_msg, status_display],
+            outputs=[conn_msg, status_display, transcript_display],
         )
 
         clear_trans_btn.click(
@@ -565,15 +622,7 @@ def build_app() -> gr.Blocks:
         clear_buf_btn.click(
             fn=clear_buffer,
             inputs=[],
-            outputs=[status_display],
-        )
-
-        # Periodic transcript refresh
-        transcript_timer = gr.Timer(value=2)
-        transcript_timer.tick(
-            fn=get_transcript,
-            inputs=[],
-            outputs=[transcript_display],
+            outputs=[status_display, transcript_display],
         )
 
     return app
