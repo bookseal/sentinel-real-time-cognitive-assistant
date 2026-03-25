@@ -1,0 +1,6 @@
+gradio>=4.0
+torch
+torchaudio
+websockets
+python-dotenv
+numpy

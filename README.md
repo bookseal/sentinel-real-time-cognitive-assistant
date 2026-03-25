@@ -1,73 +1,101 @@
-# 🎙️ Real-time Cognitive Assistant (RTCA)
+# 🛡️ Sentinel: Real-time Cognitive Assistant
 
-> **"Bridging the gap between human conversation and machine-verified intelligence."**
+> **"Converting conversational noise into verified signal through emotional and factual surveillance."**
 
-## 1. Project Purpose
-The **Real-time Cognitive Assistant (RTCA)** is a high-performance system designed to act as an external "Prefrontal Cortex" during complex meetings. Built with **OpenAI's Realtime API** and **LangGraph**, it aims to:
-* **Augment Emotional Intelligence**: Provide real-time visual alerts for high-stress situations].
-* **Enhance Decision Accuracy**: Detect information with low credibility and trigger instant fact-checks].
-* **Scale Intellectual Leverage**: Convert raw meeting audio into structured, actionable insights for the "Individual Contributor"].
+## 1. Project Goals (The North Star)
 
----
+The primary objective of **Sentinel** is to serve as an objective, third-party observer in high-stakes environments.
 
-## 2. Decision Matrix: Architectural Strategy
-
-This system follows the **Well-Architected Framework** to ensure operational excellence and scalability].
-
-| Strategy | **High Analytical Depth (Batch)** | **Ultra-Low Latency (Streaming)** |
-| :--- | :--- | :--- |
-| **High Complexity** | Post-meeting deep-dive reports | **[Target] Real-time Cognitive Intervention** |
-| **Low Complexity** | Basic speech-to-text archiving | Real-time captions / Subtitles |
+- **Enforce Rationality**: Monitor and alert when emotions override logic.
+- **Ensure Truth**: Cross-reference verbal claims with real-time data.
+- **Leverage Knowledge**: Act as a "Technical Master" assistant that filters irrelevant data.
+- **Infrastructure Excellence**: Deploy as a resilient microservice on the `bit-habit` ecosystem.
 
 ---
 
-## 3. Core Feature: The "Red Light" (Emotional Intensity Monitor)
+## 2. MVP Focus: Emotional Sentinel
 
-The assistant continuously monitors the meeting's emotional climate. When vocal arousal exceeds the defined threshold, a **Red Light** status is triggered to alert the user of potential "emotional hijacking."
+For the Minimum Viable Product (MVP), we focus strictly on **Vocal Arousal Monitoring**.
 
-### 🧠 The Mathematical Logic
-The Emotional Intensity Index ($E$) is calculated as follows:
-
-$$E = \omega_1 \cdot \Delta P + \omega_2 \cdot V_{rms} + \omega_3 \cdot S_{agg}$$
-
-- **$\Delta P$ (Pitch Variance)**: Measures the fluctuation in vocal frequency, indicating stress or excitement.
-- **$V_{rms}$ (Volume Root-Mean-Square)**: Tracks energy levels; sudden spikes often correlate with shouting or interruptions.
-- **$S_{agg}$ (Aggressive Sentiment)**: Semantic analysis of word choices (e.g., confrontational vs. collaborative).
-- **Intuitive Meaning**: "The system ignores normal excitement but triggers an alert when the combination of voice-shaking, loud volume, and sharp language suggests a loss of objectivity."
+- **The Red Light**: When the system detects high-arousal emotions (anger, extreme stress), it triggers a visual "Red Light" alert.
+- **Objective**: Prevent "Emotional Hijacking" and maintain professional integrity in meetings.
 
 ---
 
-## 4. Evolutionary Roadmap
-1.  **Stage 1 (MVP)**: Persistent background listening with "Red Light" visual trigger for high-arousal emotions.
-2.  **Stage 2 (Agentic Fact-Check)**: Integration of **LangGraph** to identify factual claims and verify them via search agents (e.g., Tavily)].
-3.  **Stage 3 (Cloud-Native Deployment)**: Migrating the backend to **k3s on Oracle Cloud (OCI)** with **Traefik** for secure, low-latency streaming].
+## 3. Tech Stack (The Architecture)
+
+Our stack is chosen for **Operational Excellence** and **High-Performance Streaming**.
+
+| Layer              | Technology              | Reason                                               |
+| :----------------- | :---------------------- | :--------------------------------------------------- |
+| **Frontend**       | **Gradio**              | Rapid prototyping & native Python streaming support. |
+| **Backend**        | **Python (FastAPI)**    | High-concurrency support for WebSocket connections.  |
+| **AI Engine**      | **OpenAI Realtime API** | Ultra-low latency speech-to-sentiment processing.    |
+| **Orchestration**  | **LangGraph**           | Complex state management for agentic workflows.      |
+| **Infrastructure** | **k3s on Oracle OCI**   | Resilient hosting at `sentinel.bit-habit.com`.       |
 
 ---
 
-## 5. TODO List: Phase 1 (Emotion Red Light Implementation)
+## 4. Git Workflow Structure
 
-To meet the standards of a **Global AI Platform Engineer**, we focus on modularity and resilience].
+We follow the **"Feature Branch"** model to maintain codebase integrity.
 
-### 🛠️ Infrastructure & Connectivity
-* [ ] **API Orchestration**: Implement WebSocket client for `gpt-realtime-1.5`].
-* [ ] **Gradio Interface**: Create a dashboard with a dynamic HTML status indicator (Green/Yellow/Red).
-* [ ] **Environment Security**: Securely manage API keys using `.env` (Zero-trust approach)].
-
-### 🎙️ Audio Engineering
-* [ ] **Chunked Streaming**: Implement `gr.Audio(streaming=True)` with 500ms intervals.
-* [ ] **VAD (Voice Activity Detection)**: Integrate **Silero VAD** locally to reduce API costs and noise].
-
-### 🤖 Logic & Sentiment Analysis
-* [ ] **System Prompting**: Design a system message that instructs the agent to return a JSON object with `emotion_score` and `justification`].
-* [ ] **Asynchronous Processing**: Use Python `asyncio` to prevent UI blocking during API calls.
-* [ ] **Damping Filter**: Implement a sliding window average (e.g., last 3 seconds) to ensure status light stability.
+1. **`main`**: Production-ready code. Auto-deployed to k3s.
+2. **`develop`**: Integration branch for new features.
+3. **`feature/name`**: Individual task branches (e.g., `feature/emotion-logic`).
 
 ---
 
-## 🚩 Red Flag & Proactive Alternative
-**The Red Flag**: Relying solely on text-based sentiment may cause "False Positives" for enthusiastic but non-aggressive speakers].
+## 5. Testing Methodology
 
-**The Alternative**: Use a **Multimodal Weighting System**. Combine the LLM's text sentiment analysis with raw audio metadata (RMS energy). If text is "Aggressive" but volume is "Normal," categorize it as "Sarcasm" rather than a "Red Light" alert].
+- **Unit Testing**: Test the `Emotion Scoring` logic with recorded audio clips.
+- **Integration Testing**: Verify WebSocket latency between Gradio and OpenAI.
+- **Stress Test**: Role-play a heated debate to see if the "Red Light" triggers correctly.
+- **Frugality Check**: Monitor token usage to ensure 5-year FIRE goals are maintained.
 
 ---
-© 2026 Gichan Lee. Built on the foundations of 42 Seoul and Microsoft Technical Excellence].
+
+## 6. Detailed AI Agent TODO List (Phase-by-Phase)
+
+### Phase 1: Sensory Input Layer (STT & VAD)
+
+1. **Initialize Audio Stream**: Implement `gr.Audio(streaming=True)` in Gradio to capture 500ms chunks.
+2. **Local VAD Implementation**: Integrate **Silero VAD** on the local machine. The agent must only "wake up" and send data when actual human speech is detected.
+3. **WebSocket Handshake**: Establish a secure, bidirectional WebSocket connection to `api.openai.com/v1/realtime`.
+4. **Buffer Management**: Create a circular buffer to manage audio chunks and prevent memory leaks.
+
+### Phase 2: Cognitive Processing Layer (Sentiment & Intensity)
+
+1. **System Prompt Engineering**: Design a specialized prompt for the "Sentinel Agent".
+   - _Instruction_: "Monitor the input stream for signs of anger or aggression. Output JSON: `{ "score": 0.0-1.0, "reason": "string" }`".
+2. **Multimodal Data Fusion**:
+   - **Textual Sentiment**: Use the LLM to analyze transcript semantic intensity.
+   - **Audio Metadata**: Extract RMS (volume) and Pitch variance from the raw buffer.
+3. **Intensity Logic ($E$)**:
+   $$E = \omega_1 \cdot \Delta P + \omega_2 \cdot V_{rms} + \omega_3 \cdot S_{agg}$$
+   - _Intuitive Meaning_: Emotional Intensity $E$ is the weighted sum of Pitch Variance, RMS Volume, and Sentiment Aggression.
+4. **Smoothing Algorithm**: Implement a 3-second sliding window average for $E$ to stabilize the visual output.
+
+### Phase 3: Action & Feedback Layer (The Red Light)
+
+1. **Threshold Triggering**: Define $\theta_e$ (Emotion Threshold).
+   - If $E > 0.7$, trigger the **Red Light**.
+   - If $0.5 < E \le 0.7$, trigger a **Yellow Light**.
+2. **Reactive UI**: Create an HTML/CSS component in Gradio that updates background color in real-time via WebSocket events.
+3. **Alert Logging**: Store "Red Light" events with timestamps for post-meeting review.
+
+### Phase 4: Cloud-Native Infrastructure & Deployment (k3s)
+
+1. **Dockerization**: Create a multi-stage `Dockerfile` optimized for Python and audio processing libraries.
+2. **K8s Manifests**: Write Deployment and Service YAMLs for the `sentinel` namespace.
+3. **Helm Chart Creation**: Package the application into a Helm chart for version-controlled deployments.
+4. **Ingress Configuration**:
+   - Configure **Traefik IngressRoute** for `sentinel.bit-habit.com`.
+   - Enable **WebSocket support** and **Middleware** (Rate-limit, Retry).
+5. **TLS Automation**: Use `cert-manager` to automate Wildcard TLS for the custom domain.
+6. **GitOps Integration**: Set up a GitHub Action to auto-deploy to the k3s cluster on every push to `main`.
+7. **Liveness/Readiness Probes**: Implement health check endpoints to ensure 99.9% uptime.
+
+---
+
+© 2026 Gichan Lee. Deployed via k3s. Served by Traefik.

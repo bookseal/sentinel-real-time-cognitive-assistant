@@ -1,0 +1,14 @@
+# Environments
+.env
+
+# Logs and databases
+*.log
+nohup.out
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDEs
+.vscode/
+.idea/
