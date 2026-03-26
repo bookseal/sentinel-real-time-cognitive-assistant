@@ -232,54 +232,63 @@ def generate_status_html() -> str:
         if remaining > 4.5:
             vibrate_js = '<script>if(navigator.vibrate)navigator.vibrate([200,100,200]);</script>'
 
+    # Purpose reminder: This dashboard monitors vocal volume and pitch
+    # in real-time during meetings to detect emotional escalation.
+    # All computation is local (NumPy) — zero cloud cost.
+
     html = f"""
     {vibrate_js}
     <div style="
         font-family: 'Inter', 'Segoe UI', sans-serif;
-        background: linear-gradient(135deg, #151a2e 0%, #1e213a 50%, #202a45 100%);
+        background: #161b2e;
         border-radius: 14px;
         padding: 22px;
         color: #f5f5f5;
-        border: 1px solid #4d4f66;
+        border: 1px solid #2d3352;
     ">
+        <!-- Purpose banner -->
+        <div style="text-align:center;font-size:11px;color:#7a80a0;margin-bottom:14px;letter-spacing:0.5px;">
+            Meeting Voice Monitor — Local Analysis Only
+        </div>
+
         {alert_html}
 
         <!-- Volume Gauge -->
-        <div style="margin-bottom: 16px;">
-            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#d1d5e0;margin-bottom:5px;">
-                <span>Volume</span>
-                <span style="color:{vol_color};">{volume_db:.1f} dB</span>
+        <div style="margin-bottom: 18px;">
+            <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-bottom:6px;">
+                <span style="color:#f0f0f5;">VOLUME</span>
+                <span style="color:{vol_color};font-size:15px;">{volume_db:.1f} dB</span>
             </div>
-            <div style="background:#111526;border-radius:6px;height:14px;overflow:hidden;border:1px solid #3a3f5a;">
-                <div style="width:{vol_pct:.1f}%;height:100%;background:linear-gradient(90deg,{vol_color}88,{vol_color});border-radius:6px;transition:width 0.15s ease;"></div>
+            <div style="background:#0d1020;border-radius:8px;height:16px;overflow:hidden;">
+                <div style="width:{vol_pct:.1f}%;height:100%;background:{vol_color};border-radius:8px;"></div>
             </div>
         </div>
 
         <!-- Pitch Gauge -->
-        <div style="margin-bottom: 16px;">
-            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#d1d5e0;margin-bottom:5px;">
-                <span>Pitch</span>
-                <span style="color:{pitch_color};">{avg_pitch:.0f} Hz</span>
+        <div style="margin-bottom: 18px;">
+            <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-bottom:6px;">
+                <span style="color:#f0f0f5;">PITCH</span>
+                <span style="color:{pitch_color};font-size:15px;">{avg_pitch:.0f} Hz</span>
             </div>
-            <div style="background:#111526;border-radius:6px;height:14px;overflow:hidden;border:1px solid #3a3f5a;">
-                <div style="width:{pitch_pct:.1f}%;height:100%;background:linear-gradient(90deg,{pitch_color}88,{pitch_color});border-radius:6px;transition:width 0.15s ease;"></div>
+            <div style="background:#0d1020;border-radius:8px;height:16px;overflow:hidden;">
+                <div style="width:{pitch_pct:.1f}%;height:100%;background:{pitch_color};border-radius:8px;"></div>
             </div>
         </div>
 
-        <!-- VAD + Stats (single compact row) -->
+        <!-- VAD + Stats -->
         <div style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-            color: #8b92b0;
-            padding: 10px 0;
-            border-top: 1px solid #2a2f45;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            font-size:12px;
+            color:#9da3bf;
+            padding:10px 0 0;
+            border-top:1px solid #252a40;
         ">
-            <span>{vad_dot} <span style="color:#666;">({speech_prob:.0%})</span></span>
-            <span>Chunks: <span style="color:#60a5fa;">{chunks}</span></span>
-            <span>Speech: <span style="color:#34d399;">{speech_chunks}</span></span>
-            <span>Last: <span style="color:#cad1e6;">{last_activity}</span></span>
+            <span>{vad_dot} <span style="color:#777;">({speech_prob:.0%})</span></span>
+            <span>Chunks <span style="color:#8ab4f8;">{chunks}</span></span>
+            <span>Speech <span style="color:#81c995;">{speech_chunks}</span></span>
+            <span style="color:#bbb;">{last_activity}</span>
         </div>
     </div>
     """
