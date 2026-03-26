@@ -71,12 +71,33 @@ Sentinel is built in 10 incremental phases, each on its own feature branch. The 
 
 Detects shouting using NumPy RMS → dB conversion. Zero cloud calls, zero cost, sub-10ms latency.
 
+```mermaid
+graph LR
+    A[🎤 Audio Chunk] --> B[NumPy RMS]
+    B --> C[dB Conversion<br/>20×log₁₀ + 94]
+    C --> D[Sliding Window<br/>5 chunks]
+    D --> E{"Threshold?"}
+    E -->|"< 75 dB"| F[🟢 Normal]
+    E -->|"75–85 dB"| G[🟡 Warning]
+    E -->|"> 85 dB"| H[🔴 RED ALERT]
+
+    style A fill:#424242,color:#fff
+    style B fill:#ff8a80,color:#000
+    style C fill:#ff5252,color:#fff
+    style D fill:#ff1744,color:#fff
+    style F fill:#00e676,color:#000
+    style G fill:#ffab00,color:#000
+    style H fill:#ff1744,color:#fff,stroke:#ff0000,stroke-width:3px
+```
+
 | Key | Value |
 |-----|-------|
 | Shout Threshold | 85 dB SPL |
 | Sliding Window | 5 chunks (2.5s) |
 | Cost | **$0.00** |
 | Core File | [`audio_logic.py`](audio_logic.py) |
+
+> 📖 **[Full Engineering Guide →](docs/phase-01-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
@@ -85,12 +106,33 @@ Detects shouting using NumPy RMS → dB conversion. Zero cloud calls, zero cost,
 
 Silero VAD gates the OpenAI API — only speech gets sent, silence costs $0. Includes a 1-second grace period to prevent cutting off mid-sentence.
 
+```mermaid
+graph LR
+    A[🎤 Audio Chunk] --> B[Silero VAD]
+    B --> C{"P(speech) > 0.5?"}
+    C -->|Yes| D[🟢 Gate OPEN]
+    C -->|No| E{"Grace Period?"}
+    E -->|Remaining| D
+    E -->|Expired| F[🔴 Gate CLOSED<br/>$0.00]
+    D --> G[WebSocket Send]
+    G --> H[☁️ OpenAI Realtime API]
+    H --> I[🧠 Emotion Score<br/>0.0 — 1.0]
+
+    style B fill:#00e676,color:#000
+    style D fill:#00e676,color:#000,stroke:#00c853,stroke-width:2px
+    style F fill:#616161,color:#fff
+    style H fill:#42a5f5,color:#fff
+    style I fill:#69f0ae,color:#000
+```
+
 | Key | Value |
 |-----|-------|
 | VAD Threshold | P(speech) > 0.5 |
 | Grace Period | 2 chunks (~1s) |
 | Emotion Output | Arousal 0.0–1.0 via `report_emotion` tool |
 | Core Files | [`vad.py`](vad.py), [`ws_client.py`](ws_client.py) |
+
+> 📖 **[Full Engineering Guide →](docs/phase-02-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
@@ -99,11 +141,30 @@ Silero VAD gates the OpenAI API — only speech gets sent, silence costs $0. Inc
 
 Identifies **who** is speaking and renders color-coded chat bubbles. Users can assign custom names via the Speaker Legend panel.
 
+```mermaid
+graph LR
+    A[☁️ OpenAI API] --> B["report_emotion()<br/>+ speaker_id"]
+    B --> C[Speaker State<br/>Manager]
+    C --> D["🔵 Speaker 0"]
+    C --> E["🟢 Speaker 1"]
+    C --> F["🟠 Speaker 2"]
+    D & E & F --> G[Color-coded<br/>Chat Bubbles]
+    G --> H[📝 Transcript UI]
+
+    style D fill:#4fc3f7,color:#000
+    style E fill:#81c784,color:#000
+    style F fill:#ffb74d,color:#000
+    style C fill:#e1f5fe,color:#000
+    style H fill:#263238,color:#fff
+```
+
 | Key | Value |
 |-----|-------|
 | Speaker Colors | 5 distinct colors (blue, green, orange, pink, purple) |
 | Name Assignment | Manual via UI (e.g., `speaker_0` → "Gichan") |
 | Core File | [`app.py`](app.py) — `SPEAKER_COLORS`, `update_speaker_name()` |
+
+> 📖 **[Full Engineering Guide →](docs/phase-03-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
@@ -112,12 +173,33 @@ Identifies **who** is speaking and renders color-coded chat bubbles. Users can a
 
 Filters conversation to find **checkable facts** using regex pattern matching — no LLM needed. Only high-confidence claims (≥0.6) trigger highlighting.
 
+```mermaid
+graph LR
+    A[📝 Transcript<br/>Chunk] --> B[Buffer<br/>30 chunks]
+    B --> C{"Small Talk?"}
+    C -->|"Hello, Hi..."| D[⬛ Skip]
+    C -->|No| E[Pattern Scan<br/>6 categories]
+    E --> F["Score =<br/>0.5 + N × 0.15"]
+    F --> G{">= 0.6?"}
+    G -->|Yes| H[⚡ Highlight<br/>Yellow]
+    G -->|No| I[Normal UI]
+    H --> J[Queue for<br/>Fact-Check]
+
+    style D fill:#616161,color:#aaa
+    style E fill:#fff176,color:#000
+    style F fill:#ffab00,color:#000
+    style H fill:#ffab00,color:#000,stroke:#ff8f00,stroke-width:3px
+    style J fill:#7c4dff,color:#fff
+```
+
 | Key | Value |
 |-----|-------|
 | Pattern Categories | 6 (numbers, dates, statistics, absolutes, named entities, factual assertions) |
 | Confidence Formula | `0.5 + matched_patterns × 0.15` |
 | False Positive Guard | 4 small-talk rejection patterns |
 | Core File | [`agent/claim_detector.py`](agent/claim_detector.py) |
+
+> 📖 **[Full Engineering Guide →](docs/phase-04-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
@@ -126,12 +208,32 @@ Filters conversation to find **checkable facts** using regex pattern matching �
 
 Detected claims are verified against the web using **Tavily AI Search** + **GPT-4o-mini** as a judge. Returns: Verified, False, or Disputed.
 
+```mermaid
+sequenceDiagram
+    participant C as ⚡ Claim
+    participant T as 🔎 Tavily Search
+    participant J as 🧠 GPT-4o-mini Judge
+    participant U as 🖥️ UI
+
+    C->>T: "Is it true that: [claim]"
+    T-->>J: Top 3 sources + AI answer
+    J->>J: Compare claim vs evidence
+    J-->>U: ✅ Verified
+    Note over J,U: or ❌ False / ⚠️ Disputed
+
+    rect rgb(124, 77, 255, 0.1)
+        Note over T,J: RAG Pipeline<br/>(Retrieval → Augment → Generate)
+    end
+```
+
 | Key | Value |
 |-----|-------|
 | Search Engine | Tavily (LLM-ready content) |
 | Judge Model | GPT-4o-mini ($0.15/1M tokens) |
 | Target SLA | < 5 seconds |
 | Core Files | [`tools/search.py`](tools/search.py), [`agent/verifier.py`](agent/verifier.py) |
+
+> 📖 **[Full Engineering Guide →](docs/phase-05-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
@@ -140,12 +242,32 @@ Detected claims are verified against the web using **Tavily AI Search** + **GPT-
 
 Automatically extracts commitments ("I will send the report by Friday") from live conversation. Exports as downloadable `.md` file.
 
+```mermaid
+graph LR
+    A[📝 Live<br/>Transcript] --> B[Sliding Window<br/>20 chunks]
+    B --> C{"Vague?<br/>maybe, later..."}
+    C -->|Yes| D[🚫 Rejected]
+    C -->|No| E{"Commitment?<br/>I will, we need..."}
+    E -->|Yes| F[🤖 LLM Extract<br/>or Regex Fallback]
+    E -->|No| G[Skip]
+    F --> H[Dedup Check]
+    H --> I[📋 Task List]
+    I --> J[📥 Download .md]
+
+    style D fill:#616161,color:#aaa
+    style F fill:#26c6da,color:#000
+    style I fill:#00bcd4,color:#000,stroke:#0097a7,stroke-width:2px
+    style J fill:#80deea,color:#000
+```
+
 | Key | Value |
 |-----|-------|
 | Commitment Patterns | 8 regex patterns |
 | Vague Rejection | "I'll do it later" → filtered out |
 | Export | Markdown table with Task, Owner, Deadline |
 | Core File | [`agent/summarizer.py`](agent/summarizer.py) |
+
+> 📖 **[Full Engineering Guide →](docs/phase-06-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
@@ -154,12 +276,33 @@ Automatically extracts commitments ("I will send the report by Friday") from liv
 
 Webcam detects facial stress (brow furrow, jaw clench, eye squint) using **Mediapipe Face Mesh** — 100% local, no frames sent externally. Fused with audio into the **Sentinel Index**.
 
+```mermaid
+graph TD
+    A[🎤 Microphone] --> B[Audio Arousal<br/>0.0 — 1.0]
+    C[📷 Webcam] --> D[Mediapipe<br/>Face Mesh]
+    D --> E["😠 Brow Furrow (0.4)"]
+    D --> F["😬 Jaw Clench (0.35)"]
+    D --> G["👀 Eye Squint (0.25)"]
+    E & F & G --> H[Visual Stress<br/>0.0 — 1.0]
+    B -->|"× 0.6"| I[⚖️ Sentinel Index]
+    H -->|"× 0.4"| I
+    I --> J["Si = 0.6×Audio + 0.4×Vision"]
+
+    style B fill:#f06292,color:#fff
+    style H fill:#f06292,color:#fff
+    style I fill:#ffab00,color:#000,stroke:#ff8f00,stroke-width:3px
+    style J fill:#ff6f00,color:#fff
+    style D fill:#e1bee7,color:#000
+```
+
 | Key | Value |
 |-----|-------|
 | Landmarks | 468 (Mediapipe Face Mesh) |
 | Stress Formula | `0.4×brow + 0.35×jaw + 0.25×eye` |
 | Sentinel Index | `Si = 0.6×Audio + 0.4×Vision` |
 | Core File | [`vision/face_monitor.py`](vision/face_monitor.py) |
+
+> 📖 **[Full Engineering Guide →](docs/phase-07-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
@@ -168,6 +311,21 @@ Webcam detects facial stress (brow furrow, jaw clench, eye squint) using **Media
 
 Switch from OpenAI cloud to local **vLLM** (Llama-3 8B) or **Ollama** with one environment variable. Same WebSocket interface, zero variable cost.
 
+```mermaid
+graph TD
+    A["🔧 LLM_PROVIDER"] --> B{"Value?"}
+    B -->|"openai"| C["☁️ OpenAI API<br/>wss://api.openai.com<br/>💰 $50–200/mo"]
+    B -->|"local"| D["🏠 Local vLLM<br/>ws://localhost:8000<br/>💚 $0/mo"]
+    C --> E[Same WebSocket<br/>Interface]
+    D --> E
+    E --> F[Sentinel App]
+
+    style C fill:#ef5350,color:#fff
+    style D fill:#66bb6a,color:#000,stroke:#43a047,stroke-width:3px
+    style E fill:#e8f5e9,color:#000
+    style A fill:#fff9c4,color:#000
+```
+
 | Key | Value |
 |-----|-------|
 | Switch | `LLM_PROVIDER=local` |
@@ -175,12 +333,34 @@ Switch from OpenAI cloud to local **vLLM** (Llama-3 8B) or **Ollama** with one e
 | GPU Requirement | 1× NVIDIA (8–16 GB VRAM) |
 | Core Files | [`k8s/vllm-deployment.yaml`](k8s/vllm-deployment.yaml), [`ws_client.py`](ws_client.py) |
 
+> 📖 **[Full Engineering Guide →](docs/phase-08-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
+
 ---
 
 ### Phase 09 — 🔔 Ecosystem Integration (Slack/Zoom)
 > **Branch**: `feature/phase-09-integration`
 
 When the Sentinel Index exceeds threshold, alerts fire to **Slack** and **Zoom** automatically. 5-minute cool-down prevents spam.
+
+```mermaid
+graph LR
+    A["⚖️ Sentinel Index"] --> B{"Si ≥ 0.8?"}
+    B -->|No| C[No Action]
+    B -->|"≥ 0.8"| D[🟡 RED ALERT]
+    B -->|"≥ 0.9"| E[🔴 CRITICAL]
+    D & E --> F{"Cool-down<br/>5 min?"}
+    F -->|Active| G[⏳ Suppressed]
+    F -->|Clear| H[Alert Dispatcher]
+    H --> I[💬 Slack<br/>Webhook]
+    H --> J[📹 Zoom<br/>Chat API]
+
+    style D fill:#ef5350,color:#fff
+    style E fill:#b71c1c,color:#fff,stroke:#f44336,stroke-width:3px
+    style G fill:#616161,color:#aaa
+    style I fill:#42a5f5,color:#fff
+    style J fill:#42a5f5,color:#fff
+    style C fill:#424242,color:#888
+```
 
 | Key | Value |
 |-----|-------|
@@ -190,12 +370,36 @@ When the Sentinel Index exceeds threshold, alerts fire to **Slack** and **Zoom**
 | Cool-down | 300 seconds (5 min) |
 | Core File | [`integration/dispatcher.py`](integration/dispatcher.py) |
 
+> 📖 **[Full Engineering Guide →](docs/phase-09-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
+
 ---
 
 ### Phase 10 — 🕊️ Autonomous Verbal Mediation
 > **Branch**: `feature/phase-10-mediation`
 
 When conflict escalates beyond 0.9 for 10+ seconds, Sentinel generates a calming de-escalation message via **OpenAI TTS** and plays it to the meeting. Users have a "Silence Sentinel" override button.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Monitoring
+    Monitoring --> Escalating: Si > 0.9
+    Escalating --> Monitoring: Si drops below 0.9
+    Escalating --> Mediating: Sustained > 10s
+    Mediating --> GenerateScript: LLM or fallback
+    GenerateScript --> TTSAudio: OpenAI TTS (nova)
+    TTSAudio --> Cooldown: Play calming message
+    Cooldown --> Monitoring: 120s elapsed
+
+    Monitoring --> Silenced: 🔇 User clicks Silence
+    Silenced --> Monitoring: 🔊 User clicks Enable
+
+    state Mediating {
+        direction LR
+        [*] --> CheckCooldown
+        CheckCooldown --> Generate: Clear
+        CheckCooldown --> Skip: Active
+    }
+```
 
 | Key | Value |
 |-----|-------|
@@ -204,6 +408,8 @@ When conflict escalates beyond 0.9 for 10+ seconds, Sentinel generates a calming
 | Cool-down | 120 seconds between interventions |
 | Safety | "Silence Sentinel" button (user override) |
 | Core File | [`agent/mediator.py`](agent/mediator.py) |
+
+> 📖 **[Full Engineering Guide →](docs/phase-10-flow.md)** — 3-chapter deep dive (1-min / 10-min / 100-min)
 
 ---
 
