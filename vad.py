@@ -83,7 +83,7 @@ class VoiceActivityDetector:
 
         # Silero VAD expects specific chunk sizes (512, 1024, 1536 for 16kHz)
         # Pad or truncate to nearest valid size
-        valid_sizes = [512, 1024, 1536]
+        valid_sizes = [512]  # Silero VAD v5
         chunk_len = len(tensor)
 
         if chunk_len == 0:
@@ -129,7 +129,7 @@ class VoiceActivityDetector:
 
         tensor = self._preprocess(audio_chunk)
 
-        valid_sizes = [512, 1024, 1536]
+        valid_sizes = [512]  # Silero VAD v5
         chunk_len = len(tensor)
         best_size = min(valid_sizes, key=lambda s: abs(s - chunk_len))
 
