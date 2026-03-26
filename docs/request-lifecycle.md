@@ -6,6 +6,66 @@
 
 ---
 
+## Stage 0: TLS Certificate (Let's Encrypt via cert-manager)
+
+Before any HTTPS request can succeed, a valid TLS certificate must exist
+in the cluster. This is managed **outside this repository**, in the
+shared infrastructure repo:
+
+```
+bit-habit-infra/
+└── base/
+    └── cert-manager/
+        ├── cluster-issuer.yaml   ← HOW to get certs (Let's Encrypt + Route 53)
+        ├── certificate.yaml      ← WHAT cert to issue (*.bit-habit.com wildcard)
+        └── aws-secret.yaml       ← AWS credentials for DNS-01 challenge
+```
+
+### How it works
+
+```
+cert-manager               Let's Encrypt          AWS Route 53
+    │                           │                       │
+    ├── "I need a cert for      │                       │
+    │    *.bit-habit.com"  ────▶│                       │
+    │                           │── "Prove you own      │
+    │                           │    bit-habit.com by    │
+    │                           │    setting this TXT    │
+    │                           │    record"             │
+    │                           │                       │
+    ├── Creates TXT record ─────┼──────────────────────▶│
+    │                           │                       │
+    │                           │── Verifies TXT ──────▶│
+    │                           │                       │
+    │◀── Here's your cert ──────┤                       │
+    │                           │                       │
+    └── Stores in K8s Secret                            │
+         "tls-secret"                                   │
+```
+
+**`cluster-issuer.yaml`** — Defines the ACME issuer `letsencrypt-prod`:
+- Uses the **DNS-01 challenge** via AWS Route 53 (required for wildcard certs)
+- cert-manager automatically creates/deletes TXT records in Route 53 to
+  prove domain ownership
+- ACME endpoint: `https://acme-v02.api.letsencrypt.org/directory`
+
+**`certificate.yaml`** — Requests a wildcard cert:
+- `dnsNames`: `bit-habit.com` + `*.bit-habit.com` (covers all subdomains
+  including `sentinel.bit-habit.com`)
+- `secretName: tls-secret` — the resulting cert + private key are stored
+  in this K8s Secret
+- cert-manager **auto-renews** ~30 days before the 90-day Let's Encrypt
+  expiry
+
+**`aws-secret.yaml`** — AWS credentials that allow cert-manager to
+create Route 53 DNS records for the DNS-01 challenge.
+
+The `tls-secret` created by cert-manager is the **same Secret**
+referenced in `k8s/ingress.yaml` line 14 (`secretName: tls-secret`).
+This is the bridge between the infra repo and this application repo.
+
+---
+
 ## Stage 1: Network Ingress (Kubernetes)
 
 When the browser sends `GET https://sentinel.bit-habit.com/`, the request
@@ -20,12 +80,17 @@ Browser ──HTTPS──▶ Traefik Ingress Controller
 | Field | Value | Purpose |
 |-------|-------|---------|
 | `host` | `sentinel.bit-habit.com` | Match incoming domain |
-| `secretName` | `tls-secret` | TLS certificate for HTTPS termination |
+| `secretName` | `tls-secret` | TLS certificate (issued by cert-manager in `bit-habit-infra`) |
 | `backend.service.name` | `sentinel-svc` | Forward decrypted traffic to this Service |
 | `backend.service.port` | `80` | Target port on the Service |
 
-Traefik terminates TLS here — downstream traffic within the cluster is
-plain HTTP.
+Traefik loads the wildcard cert from `tls-secret` and terminates TLS
+here — downstream traffic within the cluster is plain HTTP.
+
+**Note:** This repo's `k8s/ingress.yaml` is a **per-app Ingress** for
+Sentinel only. The shared infra repo (`bit-habit-infra/base/ingress.yaml`)
+contains a `main-ingress` that routes all other `*.bit-habit.com`
+subdomains (blog, wiki, booktoss, etc.) to their respective services.
 
 ### 1-2. `k8s/service.yaml` — Port Mapping
 
@@ -191,6 +256,13 @@ via Gradio's WebSocket connection, replacing the dashboard in real-time.
 │  BROWSER: https://sentinel.bit-habit.com                        │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ HTTPS GET /
+                           ▼
+┌──────────────────────────────────────────────────┐
+│  bit-habit-infra/base/cert-manager/              │
+│  cert-manager: Let's Encrypt wildcard cert       │
+│  → stored in K8s Secret "tls-secret"             │
+└──────────────────────────┬───────────────────────┘
+                           │ tls-secret
                            ▼
 ┌──────────────────────────────────────────────────┐
 │  k8s/ingress.yaml                                │
