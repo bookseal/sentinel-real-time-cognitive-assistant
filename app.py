@@ -332,6 +332,23 @@ def build_app() -> gr.Blocks:
     }
     .app-header p { color: #a0a5b5; font-size: 0.85em; margin-top: 2px; }
     footer { display: none !important; }
+
+    /* Suppress audio component flicker during streaming.
+       Gradio 6.x re-renders the waveform SVG on every chunk,
+       causing visual flicker. We hide the waveform entirely
+       and keep only the record button. */
+    [data-testid="waveform-x"] { display: none !important; }
+    .audio-component .timestamps { display: none !important; }
+    .audio-component .waveform-container { display: none !important; }
+    .audio-component canvas { display: none !important; }
+    /* Hide false "microphone not found" warning */
+    .audio-component .error { display: none !important; }
+    /* Minimize visual noise from the audio box */
+    .audio-component .controls { justify-content: center !important; }
+    .audio-component .component-wrapper {
+        min-height: auto !important;
+        padding: 8px !important;
+    }
     """
 
     with gr.Blocks(
@@ -350,7 +367,7 @@ def build_app() -> gr.Blocks:
         audio_input = gr.Audio(
             sources=["microphone"],
             streaming=True,
-            label="Microphone",
+            label="Tap to Record",
             type="numpy",
         )
 
