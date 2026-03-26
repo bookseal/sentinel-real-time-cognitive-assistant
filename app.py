@@ -351,9 +351,49 @@ def build_app() -> gr.Blocks:
     }
     """
 
+    # JavaScript: MutationObserver that replaces Korean Gradio UI strings
+    # with English equivalents in real-time. Gradio 6.x localizes button
+    # labels based on browser locale — this overrides them post-render.
+    force_english_js = """
+    function() {
+        const translations = {
+            '녹음': 'Record',
+            '중지': 'Stop',
+            '일시정지': 'Pause',
+            '재생': 'Play',
+            '마이크를 찾을 수 없습니다': 'Click the mic button to start',
+            '마이크를 찾을 수 없습니다.': 'Click the mic button to start',
+            '오디오 파일을 드래그하거나 클릭하여 업로드': 'Drag or click to upload audio',
+            '파일 업로드': 'Upload file',
+            '초기화': 'Reset',
+        };
+        function replaceText(node) {
+            if (node.nodeType === 3) {
+                let text = node.textContent;
+                for (const [ko, en] of Object.entries(translations)) {
+                    if (text.includes(ko)) {
+                        node.textContent = text.replace(ko, en);
+                    }
+                }
+            } else {
+                node.childNodes.forEach(replaceText);
+            }
+        }
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach(m => {
+                m.addedNodes.forEach(replaceText);
+                if (m.type === 'characterData') replaceText(m.target);
+            });
+        });
+        observer.observe(document.body, {childList: true, subtree: true, characterData: true});
+        replaceText(document.body);
+    }
+    """
+
     with gr.Blocks(
         title="Sentinel — Volume Guard",
         css=custom_css,
+        js=force_english_js,
         theme=gr.themes.Base(primary_hue="red", neutral_hue="slate"),
     ) as app:
 
@@ -362,6 +402,48 @@ def build_app() -> gr.Blocks:
                 <h1>Sentinel</h1>
                 <p>Phase 01 — Volume + Pitch Guard</p>
             </div>
+            <script>
+            (function(){
+                function fix(){
+                    document.querySelectorAll('.record-button').forEach(function(b){
+                        b.childNodes.forEach(function(n){
+                            if(n.nodeType===3) n.textContent=' Record';
+                        });
+                    });
+                    document.querySelectorAll('.stop-button').forEach(function(b){
+                        b.childNodes.forEach(function(n){
+                            if(n.nodeType===3) n.textContent=' Stop';
+                        });
+                    });
+                    document.querySelectorAll('.pause-button').forEach(function(b){
+                        b.childNodes.forEach(function(n){
+                            if(n.nodeType===3) n.textContent=' Pause';
+                        });
+                    });
+                    document.querySelectorAll('.resume-button').forEach(function(b){
+                        b.childNodes.forEach(function(n){
+                            if(n.nodeType===3) n.textContent=' Resume';
+                        });
+                    });
+                    document.querySelectorAll('option').forEach(function(o){
+                        if(o.textContent.indexOf('\uB9C8\uC774\uD06C')!==-1)
+                            o.textContent='Default Microphone';
+                    });
+                    document.querySelectorAll('.show-api').forEach(function(b){
+                        b.textContent='Use via API';
+                    });
+                    document.querySelectorAll('.settings').forEach(function(b){
+                        b.textContent='Settings';
+                    });
+                    document.querySelectorAll('.built-with').forEach(function(a){
+                        a.textContent='Built with Gradio';
+                    });
+                }
+                new MutationObserver(fix).observe(document.body,{childList:true,subtree:true});
+                setInterval(fix,300);
+                fix();
+            })();
+            </script>
         """)
 
         audio_input = gr.Audio(
