@@ -1,5 +1,6 @@
-# Environments
+# Environments & Secrets — NEVER commit real credentials
 .env
+k8s/secret.yaml
 
 # Logs and databases
 *.log
