@@ -1,6 +1,6 @@
-# Phase 01: Sensory Foundation — Local Volume Guard
+# Phase 01: Sensory Foundation — Local Volume + Pitch Guard
 
-> Detect shouting in real-time using only NumPy — zero network calls, zero cloud cost, sub-10ms latency.
+> Detect raised voices and vocal pitch changes in real-time using only NumPy — zero network calls, zero cloud cost, sub-10ms latency. Includes adaptive sensitivity for noisy environments and persistent 5-second alerts with mobile vibration.
 
 ---
 
@@ -435,3 +435,95 @@ Phase 01 has **zero upstream dependencies** — it works standalone with only Nu
 - **Phase 02 (Emotion Guard):** Builds on the audio processing pipeline established here. The resampling, RMS calculation, and chunk-based architecture are reused.
 - **Phase 07 (Vision — Sentinel Index):** Uses audio arousal as 60% weight in the multi-modal Sentinel Index fusion score. The dB reading from Phase 01 feeds directly into the arousal calculation.
 - **Phase 09 (Integration — Alert Dispatcher):** Volume alerts (`red_alert`, `warning`) can trigger external notifications via Slack, Zoom chat, or webhook integrations.
+
+---
+
+## Appendix A: v2 Features (2026-03-26)
+
+### Pitch Detection via NumPy FFT
+
+Added `get_pitch_hz(audio_data, sample_rate)` in `audio_logic.py`:
+- Uses `np.fft.rfft()` with Hanning window to extract fundamental frequency (F0)
+- Filters to human voice range: **85–400 Hz**
+- Normal male voice: ~120 Hz, female: ~210 Hz
+- Excitement/anger typically causes +50–100 Hz rise
+
+```python
+# Constants
+PITCH_BASELINE_MALE = 120.0     # Hz
+PITCH_BASELINE_FEMALE = 210.0   # Hz
+PITCH_ELEVATED_OFFSET = 50.0    # Hz rise indicating excitement
+```
+
+### Adaptive Sensitivity Slider
+
+UI includes a `gr.Slider(0.5–2.0, default=1.0)`:
+- **0.5** = Very sensitive (thresholds halved — quiet meeting rooms)
+- **1.0** = Default (70 dB shout, 60 dB warning)
+- **2.0** = Noisy environment (thresholds doubled — cafes, open offices)
+
+Dynamic threshold: `effective_threshold = SHOUT_THRESHOLD_DB × sensitivity`
+
+### Persistent Alerts (5-Second Minimum)
+
+Alerts no longer disappear instantly. When triggered:
+- `app_state["alert_until"] = time.time() + 5.0`
+- Alert banner stays visible for 5 seconds
+- Last 2 seconds: opacity fades from 1.0 to 0.3
+- Countdown displayed: "3s remaining"
+
+### Mobile Vibration
+
+On alert trigger, HTML includes:
+```html
+<script>if(navigator.vibrate) navigator.vibrate([200,100,200]);</script>
+```
+Pattern: buzz 200ms, pause 100ms, buzz 200ms.
+
+### Lowered Thresholds
+
+For meeting-room sensitivity where even slightly raised voices matter:
+
+| Threshold | Old Value | New Value |
+|-----------|-----------|-----------|
+| Shout (Red Alert) | 85 dB | **70 dB** |
+| Warning (Yellow) | 75 dB | **60 dB** |
+
+---
+
+## Appendix B: v2 Live Test Results (2026-03-26)
+
+```
+============================================================
+  PHASE 01 v2: Volume + Pitch + Sensitivity Test
+============================================================
+
+Test 1 — Thresholds lowered:
+  SHOUT:   70.0 dB (was 85)
+  WARNING: 60.0 dB (was 75)
+  [PASS]
+
+Test 2 — Pitch detection (150 Hz sine):
+  Detected: 150.0 Hz    [PASS]
+  300 Hz sine: 300.0 Hz  [PASS]
+  Silence: 0.0 Hz        [PASS]
+
+Test 3 — Sensitivity slider:
+  dB=77.7, sensitivity=1.0 -> red_alert
+  dB=77.7, sensitivity=2.0 -> normal      (less sensitive)
+  dB=77.7, sensitivity=0.5 -> red_alert   (more sensitive)
+  [PASS]
+
+Test 4 — Alert persistence:
+  alert_until set: True
+  Remaining: 5.0s
+  [PASS]
+
+Test 5 — Pitch in state: 228.0 Hz  [PASS]
+Test 6 — No CSS animation, has Volume+Pitch gauges  [PASS]
+Test 7 — Vibrate JS present during alert  [PASS]
+
+============================================================
+  ALL TESTS PASSED
+============================================================
+```
