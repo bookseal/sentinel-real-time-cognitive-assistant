@@ -1,11 +1,13 @@
 # -----------------------------------------------------------------------------
-# app.py — Phase 01: Local Volume Guard (Minimal UI)
+# app.py — Phase 01: Local Volume + Pitch Guard (Minimal UI)
 #
-# Purpose: Stream microphone audio and display real-time volume level in dB.
-#          No cloud API calls. No WebSocket. No transcript. Pure local NumPy.
+# Purpose: Stream microphone audio and display real-time volume (dB) and
+#          pitch (Hz) gauges. No cloud API. No WebSocket. Pure local NumPy.
+#          Features: sensitivity slider, persistent alerts (5s), vibration.
 # -----------------------------------------------------------------------------
 
 import logging
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -13,12 +15,18 @@ import gradio as gr
 import numpy as np
 
 from audio_buffer import CircularAudioBuffer
-from audio_logic import get_rms_db, check_volume_threshold
+from audio_logic import (
+    SHOUT_THRESHOLD_DB,
+    WARNING_THRESHOLD_DB,
+    PITCH_BASELINE_MALE,
+    PITCH_ELEVATED_OFFSET,
+    get_rms_db,
+    get_rms_linear,
+    get_pitch_hz,
+    check_volume_threshold,
+)
 from vad import VoiceActivityDetector
 
-# ──────────────────────────────────────────────
-# Configuration
-# ──────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -43,6 +51,10 @@ app_state = {
     "volume_db": 0.0,
     "volume_history": [],
     "volume_alert": "normal",
+    "pitch_hz": 0.0,
+    "pitch_history": [],     # Sliding window for pitch smoothing
+    "alert_until": 0.0,      # Unix timestamp — alert stays visible until this
+    "last_alert_level": "",   # Persisted alert level for display
 }
 
 
@@ -70,10 +82,10 @@ def resample_audio(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarra
 
 
 # ──────────────────────────────────────────────
-# Audio Processing (Volume Guard Only)
+# Audio Processing
 # ──────────────────────────────────────────────
-def process_audio_chunk(audio_data):
-    """Process audio chunk: resample → RMS → dB → threshold → VAD → UI update."""
+def process_audio_chunk(audio_data, sensitivity):
+    """Process audio: resample → RMS → dB → pitch → threshold → UI."""
     global vad
 
     if audio_data is None:
@@ -81,28 +93,54 @@ def process_audio_chunk(audio_data):
 
     sample_rate, audio = audio_data
 
-    # Stereo → mono
     if audio.ndim > 1:
         audio = audio.mean(axis=1).astype(audio.dtype)
 
-    # Resample to 16kHz
     if sample_rate != TARGET_SAMPLE_RATE:
         audio_16k = resample_audio(audio, sample_rate, TARGET_SAMPLE_RATE)
     else:
         audio_16k = audio
 
-    # RMS (linear)
+    # RMS
     rms = compute_rms(audio_16k)
     app_state["rms_level"] = rms
     app_state["chunks_processed"] += 1
 
-    # Volume Guard: dB calculation
+    # Volume dB with dynamic threshold (sensitivity slider)
     db_level = get_rms_db(audio_16k)
     app_state["volume_db"] = db_level
-    vol_result = check_volume_threshold(app_state["volume_history"], db_level)
+
+    effective_shout = SHOUT_THRESHOLD_DB * sensitivity
+    effective_warning = WARNING_THRESHOLD_DB * sensitivity
+
+    vol_result = check_volume_threshold(
+        app_state["volume_history"], db_level,
+    )
+    # Override alert_level with dynamic thresholds
+    avg_db = vol_result["avg_db"]
+    if avg_db >= effective_shout:
+        vol_result["alert_level"] = "red_alert"
+    elif avg_db >= effective_warning:
+        vol_result["alert_level"] = "warning"
+    else:
+        vol_result["alert_level"] = "normal"
+
     app_state["volume_alert"] = vol_result["alert_level"]
 
-    # VAD check
+    # Persistent alert — keep visible for 5 seconds minimum
+    now = time.time()
+    if vol_result["alert_level"] in ("warning", "red_alert"):
+        app_state["alert_until"] = now + 5.0
+        app_state["last_alert_level"] = vol_result["alert_level"]
+
+    # Pitch detection
+    pitch = get_pitch_hz(audio_16k, TARGET_SAMPLE_RATE)
+    app_state["pitch_hz"] = pitch
+    app_state["pitch_history"].append(pitch)
+    if len(app_state["pitch_history"]) > 5:
+        app_state["pitch_history"].pop(0)
+
+    # VAD
     try:
         if vad is None:
             vad = VoiceActivityDetector(threshold=0.5, sample_rate=TARGET_SAMPLE_RATE)
@@ -125,7 +163,7 @@ def process_audio_chunk(audio_data):
 
 
 # ──────────────────────────────────────────────
-# Dashboard HTML
+# Dashboard HTML — Clean Gauge Style
 # ──────────────────────────────────────────────
 def generate_status_html() -> str:
     vad_active = app_state["vad_active"]
@@ -135,141 +173,113 @@ def generate_status_html() -> str:
     speech_chunks = app_state["speech_chunks"]
     last_activity = app_state["last_activity"] or "—"
     volume_db = app_state["volume_db"]
-    volume_alert = app_state["volume_alert"]
-    buffer_size = audio_buffer.size
-    buffer_cap = audio_buffer.capacity
+    pitch_hz = app_state["pitch_hz"]
 
-    # Volume Alert
-    if volume_alert == "red_alert":
-        vol_alert_color = "#ff1744"
-        vol_alert_text = "RED ALERT — SHOUTING DETECTED"
-        vol_alert_glow = "0 0 30px #ff1744, 0 0 60px #ff174488"
-    elif volume_alert == "warning":
-        vol_alert_color = "#ffab00"
-        vol_alert_text = "WARNING — Elevated Volume"
-        vol_alert_glow = "0 0 15px #ffab00"
-    else:
-        vol_alert_color = "transparent"
-        vol_alert_text = ""
-        vol_alert_glow = "none"
+    # Smoothed pitch
+    valid_pitches = [p for p in app_state["pitch_history"] if p > 0]
+    avg_pitch = sum(valid_pitches) / len(valid_pitches) if valid_pitches else 0.0
 
-    # VAD
-    if vad_active:
-        vad_color = "#00e676"
-        vad_text = "SPEECH DETECTED"
-        vad_glow = "0 0 20px #00e676, 0 0 40px #00e67688"
-    else:
-        vad_color = "#aaa"
-        vad_text = "Listening..."
-        vad_glow = "none"
+    # Volume color
+    vol_color = "#ff1744" if volume_db >= 70 else "#ffab00" if volume_db >= 60 else "#00e676"
+    vol_pct = min(max((volume_db - 30) / 70 * 100, 0), 100)
 
-    # RMS bar
-    rms_pct = min(rms * 500, 100)
-    rms_color = "#00e676" if rms_pct < 50 else "#ffab00" if rms_pct < 80 else "#ff1744"
+    # Pitch color — green < 170 Hz, yellow 170-250, red > 250
+    pitch_color = "#ff1744" if avg_pitch > 250 else "#ffab00" if avg_pitch > 170 else "#00e676"
+    pitch_pct = min(max((avg_pitch - 85) / 315 * 100, 0), 100) if avg_pitch > 0 else 0
+
+    # VAD dot
+    vad_dot = f'<span style="color:#00e676;">●</span> Speech' if vad_active else '<span style="color:#666;">○</span> Silence'
+
+    # Persistent alert banner (5 second minimum, fade in last 2 seconds)
+    now = time.time()
+    alert_until = app_state["alert_until"]
+    alert_html = ""
+    vibrate_js = ""
+
+    if now < alert_until:
+        remaining = alert_until - now
+        # Fade: full opacity for first 3s, then fade to 0.3 over last 2s
+        opacity = 1.0 if remaining > 2.0 else 0.3 + 0.7 * (remaining / 2.0)
+        alert_level = app_state["last_alert_level"]
+
+        if alert_level == "red_alert":
+            a_color = "#ff1744"
+            a_text = "ALERT — Voice Raised"
+        else:
+            a_color = "#ffab00"
+            a_text = "CAUTION — Volume Elevated"
+
+        alert_html = f'''
+        <div style="
+            text-align: center;
+            padding: 14px;
+            margin-bottom: 14px;
+            border-radius: 10px;
+            background: {a_color}18;
+            border: 1px solid {a_color}88;
+            opacity: {opacity:.2f};
+            transition: opacity 0.5s ease;
+        ">
+            <div style="font-size: 18px; font-weight: 700; color: {a_color};">
+                {a_text}
+            </div>
+            <div style="font-size: 12px; color: #999; margin-top: 2px;">
+                {remaining:.0f}s remaining
+            </div>
+        </div>
+        '''
+        # Vibrate on mobile (only at start of alert, not every render)
+        if remaining > 4.5:
+            vibrate_js = '<script>if(navigator.vibrate)navigator.vibrate([200,100,200]);</script>'
 
     html = f"""
+    {vibrate_js}
     <div style="
         font-family: 'Inter', 'Segoe UI', sans-serif;
         background: linear-gradient(135deg, #151a2e 0%, #1e213a 50%, #202a45 100%);
-        border-radius: 16px;
-        padding: 28px;
+        border-radius: 14px;
+        padding: 22px;
         color: #f5f5f5;
         border: 1px solid #4d4f66;
     ">
-        <!-- Volume Alert Banner -->
-        {"" if volume_alert == "normal" else f'''
+        {alert_html}
+
+        <!-- Volume Gauge -->
+        <div style="margin-bottom: 16px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#d1d5e0;margin-bottom:5px;">
+                <span>Volume</span>
+                <span style="color:{vol_color};">{volume_db:.1f} dB</span>
+            </div>
+            <div style="background:#111526;border-radius:6px;height:14px;overflow:hidden;border:1px solid #3a3f5a;">
+                <div style="width:{vol_pct:.1f}%;height:100%;background:linear-gradient(90deg,{vol_color}88,{vol_color});border-radius:6px;transition:width 0.15s ease;"></div>
+            </div>
+        </div>
+
+        <!-- Pitch Gauge -->
+        <div style="margin-bottom: 16px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;color:#d1d5e0;margin-bottom:5px;">
+                <span>Pitch</span>
+                <span style="color:{pitch_color};">{avg_pitch:.0f} Hz</span>
+            </div>
+            <div style="background:#111526;border-radius:6px;height:14px;overflow:hidden;border:1px solid #3a3f5a;">
+                <div style="width:{pitch_pct:.1f}%;height:100%;background:linear-gradient(90deg,{pitch_color}88,{pitch_color});border-radius:6px;transition:width 0.15s ease;"></div>
+            </div>
+        </div>
+
+        <!-- VAD + Stats (single compact row) -->
         <div style="
-            text-align: center;
-            padding: 20px;
-            margin-bottom: 16px;
-            border-radius: 10px;
-            background: {vol_alert_color}22;
-            border: 2px solid {vol_alert_color};
-            box-shadow: {vol_alert_glow};
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #8b92b0;
+            padding: 10px 0;
+            border-top: 1px solid #2a2f45;
         ">
-            <div style="font-size: 24px; font-weight: 700; color: {vol_alert_color};">
-                {vol_alert_text}
-            </div>
-            <div style="font-size: 14px; color: #ccc; margin-top: 4px;">
-                Volume: {volume_db:.1f} dB
-            </div>
-        </div>
-        '''}
-
-        <!-- VAD Status -->
-        <div style="
-            text-align: center;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #1a1e35, #242945);
-            border: 2px solid {vad_color};
-            box-shadow: {vad_glow};
-        ">
-            <div style="font-size: 24px; font-weight: 700; color: {vad_color};">
-                {vad_text}
-            </div>
-            <div style="font-size: 13px; color: #b0b4c4; margin-top: 6px;">
-                Speech Probability: <span style="color: {vad_color}; font-weight: 600;">{speech_prob:.1%}</span>
-            </div>
-        </div>
-
-        <!-- Volume dB Meter -->
-        <div style="margin-bottom: 20px;">
-            <div style="display:flex;justify-content:space-between;font-size:14px;color:#d1d5e0;margin-bottom:6px;font-weight:600;">
-                <span>Volume (dB SPL)</span>
-                <span style="color: {'#ff1744' if volume_db >= 85 else '#ffab00' if volume_db >= 75 else '#00e676'};">
-                    {volume_db:.1f} dB
-                </span>
-            </div>
-            <div style="background:#111526;border-radius:8px;height:18px;overflow:hidden;border:1px solid #3a3f5a;">
-                <div style="
-                    width: {min(max((volume_db - 30) / 70 * 100, 0), 100):.1f}%;
-                    height: 100%;
-                    background: linear-gradient(90deg,
-                        {'#ff174488, #ff1744' if volume_db >= 85 else '#ffab0088, #ffab00' if volume_db >= 75 else '#00e67688, #00e676'});
-                    border-radius: 8px;
-                    transition: width 0.1s ease;
-                "></div>
-            </div>
-        </div>
-
-        <!-- Audio Level RMS -->
-        <div style="margin-bottom: 20px;">
-            <div style="display:flex;justify-content:space-between;font-size:13px;color:#a4a9c0;margin-bottom:6px;">
-                <span>Audio Level (RMS)</span>
-                <span>{rms:.4f}</span>
-            </div>
-            <div style="background:#111526;border-radius:8px;height:12px;overflow:hidden;border:1px solid #3a3f5a;">
-                <div style="
-                    width: {rms_pct:.1f}%;
-                    height: 100%;
-                    background: linear-gradient(90deg, {rms_color}88, {rms_color});
-                    border-radius: 8px;
-                    transition: width 0.1s ease;
-                "></div>
-            </div>
-        </div>
-
-        <!-- Stats Grid -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
-            <div style="background:#1a1e35;padding:12px;border-radius:10px;border:1px solid #3a3f5a;text-align:center;">
-                <div style="font-size:11px;color:#9a9eb5;text-transform:uppercase;letter-spacing:1px;">Chunks</div>
-                <div style="font-size:18px;font-weight:600;color:#60a5fa;margin-top:4px;">{chunks}</div>
-            </div>
-            <div style="background:#1a1e35;padding:12px;border-radius:10px;border:1px solid #3a3f5a;text-align:center;">
-                <div style="font-size:11px;color:#9a9eb5;text-transform:uppercase;letter-spacing:1px;">Speech</div>
-                <div style="font-size:18px;font-weight:600;color:#34d399;margin-top:4px;">{speech_chunks}</div>
-            </div>
-            <div style="background:#1a1e35;padding:12px;border-radius:10px;border:1px solid #3a3f5a;text-align:center;">
-                <div style="font-size:11px;color:#9a9eb5;text-transform:uppercase;letter-spacing:1px;">Buffer</div>
-                <div style="font-size:18px;font-weight:600;color:#e2e8f0;margin-top:4px;">{buffer_size}/{buffer_cap}</div>
-            </div>
-        </div>
-
-        <!-- Last Activity -->
-        <div style="text-align:center;font-size:12px;color:#8b92b0;padding-top:10px;border-top:1px solid #3a3f5a;">
-            Last Speech: <span style="color:#cad1e6;">{last_activity}</span>
+            <span>{vad_dot} <span style="color:#666;">({speech_prob:.0%})</span></span>
+            <span>Chunks: <span style="color:#60a5fa;">{chunks}</span></span>
+            <span>Speech: <span style="color:#34d399;">{speech_chunks}</span></span>
+            <span>Last: <span style="color:#cad1e6;">{last_activity}</span></span>
         </div>
     </div>
     """
@@ -284,6 +294,10 @@ def clear_buffer():
     app_state["volume_history"] = []
     app_state["volume_alert"] = "normal"
     app_state["volume_db"] = 0.0
+    app_state["pitch_hz"] = 0.0
+    app_state["pitch_history"] = []
+    app_state["alert_until"] = 0.0
+    app_state["last_alert_level"] = ""
     return generate_status_html()
 
 
@@ -296,18 +310,18 @@ def build_app() -> gr.Blocks:
     .gradio-container {
         font-family: 'Inter', sans-serif !important;
         background: linear-gradient(180deg, #0a0a1a 0%, #111122 100%) !important;
-        max-width: 700px !important;
+        max-width: 600px !important;
         margin: 0 auto !important;
     }
     .dark { --body-background-fill: #0a0a1a !important; }
-    .app-header { text-align: center; padding: 16px 0; }
+    .app-header { text-align: center; padding: 12px 0 8px; }
     .app-header h1 {
         background: linear-gradient(135deg, #ff6b6b, #ffa07a, #ff1744);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        font-size: 2em; font-weight: 700; margin-bottom: 2px;
+        font-size: 1.8em; font-weight: 700; margin-bottom: 0;
     }
-    .app-header p { color: #a0a5b5; font-size: 0.95em; }
+    .app-header p { color: #a0a5b5; font-size: 0.85em; margin-top: 2px; }
     footer { display: none !important; }
     """
 
@@ -320,27 +334,33 @@ def build_app() -> gr.Blocks:
         gr.HTML("""
             <div class="app-header">
                 <h1>Sentinel</h1>
-                <p>Phase 01: Local Volume Guard</p>
+                <p>Phase 01 — Volume + Pitch Guard</p>
             </div>
         """)
 
-        gr.Markdown("### Microphone")
         audio_input = gr.Audio(
             sources=["microphone"],
             streaming=True,
-            label="Tap to start recording",
+            label="Microphone",
             type="numpy",
         )
 
-        gr.Markdown("### Dashboard")
         status_display = gr.HTML(value=generate_status_html())
+
+        sensitivity = gr.Slider(
+            minimum=0.5,
+            maximum=2.0,
+            value=1.0,
+            step=0.1,
+            label="Sensitivity (0.5 = very sensitive, 2.0 = noisy environment)",
+        )
 
         reset_btn = gr.Button("Reset", size="sm")
 
-        # Wiring
+        # Wiring — sensitivity slider is an input to process_audio_chunk
         audio_input.stream(
             fn=process_audio_chunk,
-            inputs=[audio_input],
+            inputs=[audio_input, sensitivity],
             outputs=[status_display],
         )
 
@@ -353,11 +373,8 @@ def build_app() -> gr.Blocks:
     return app
 
 
-# ──────────────────────────────────────────────
-# Entry Point
-# ──────────────────────────────────────────────
 if __name__ == "__main__":
-    logger.info("Starting Sentinel Phase 01 — Volume Guard")
+    logger.info("Starting Sentinel Phase 01 — Volume + Pitch Guard")
     app = build_app()
     app.launch(
         server_name="0.0.0.0",

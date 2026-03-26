@@ -22,13 +22,12 @@ import numpy as np
 # -----------------------------------------------------------------------------
 # 1. Threshold Constants
 #
-# These thresholds map digital audio levels to approximate real-world Sound
-# Pressure Levels (SPL). 85 dB SPL is the OSHA threshold for hearing damage
-# risk, which correlates well with "shouting" in a meeting context.
-# 75 dB SPL is conversational-loud — enough to warrant a visual warning.
+# Lowered for meeting-room sensitivity: even a slightly raised voice (70 dB)
+# should trigger a red alert. Normal conversation is ~55-65 dB in a quiet room.
+# Users can adjust sensitivity via the UI slider (multiplier on these values).
 # -----------------------------------------------------------------------------
-SHOUT_THRESHOLD_DB = 85.0     # Red Alert: shouting / extreme volume
-WARNING_THRESHOLD_DB = 75.0   # Yellow Warning: elevated volume
+SHOUT_THRESHOLD_DB = 70.0     # Red Alert: raised voice in meeting
+WARNING_THRESHOLD_DB = 60.0   # Yellow Warning: slightly elevated volume
 
 # Reference amplitude — maximum value for 16-bit signed integer audio.
 # Used as the denominator when converting raw amplitude to 0.0–1.0 range.
@@ -180,3 +179,64 @@ def check_volume_threshold(volume_history: list, current_db: float) -> dict:
         "peak_db": peak_db,
         "current_db": current_db,
     }
+
+
+# -----------------------------------------------------------------------------
+# 5. Pitch Detection — NumPy FFT
+#
+# Extracts the fundamental frequency (F0) of speech using FFT.
+# Human voice range: 85–400 Hz (male ~120 Hz, female ~210 Hz).
+# When someone gets excited or angry, pitch rises by 50–100+ Hz.
+# This is a cheap ($0) local signal that complements volume for
+# detecting emotional escalation without any cloud API.
+# -----------------------------------------------------------------------------
+# Average resting pitch by voice type
+PITCH_BASELINE_MALE = 120.0    # Hz — typical male speaking voice
+PITCH_BASELINE_FEMALE = 210.0  # Hz — typical female speaking voice
+PITCH_ELEVATED_OFFSET = 50.0   # Hz — rise that indicates excitement/anger
+
+
+def get_pitch_hz(audio_data: np.ndarray, sample_rate: int = 16000) -> float:
+    """
+    Extract fundamental frequency (F0) using FFT peak detection.
+
+    Filters to human voice range (85–400 Hz) and returns the dominant
+    frequency. Returns 0.0 for silence or unvoiced segments.
+
+    Args:
+        audio_data: Raw audio samples as NumPy array.
+        sample_rate: Sample rate in Hz.
+
+    Returns:
+        Fundamental frequency in Hz, or 0.0 if undetectable.
+    """
+    if audio_data is None or len(audio_data) < 256:
+        return 0.0
+
+    # Normalize to float
+    audio_f = audio_data.astype(np.float64)
+    if np.issubdtype(audio_data.dtype, np.integer):
+        audio_f = audio_f / np.iinfo(audio_data.dtype).max
+
+    # Apply Hanning window to reduce spectral leakage
+    windowed = audio_f * np.hanning(len(audio_f))
+
+    # FFT — only positive frequencies
+    fft_mag = np.abs(np.fft.rfft(windowed))
+    freqs = np.fft.rfftfreq(len(windowed), 1.0 / sample_rate)
+
+    # Filter to human voice range (85–400 Hz)
+    voice_mask = (freqs >= 85) & (freqs <= 400)
+    if not voice_mask.any():
+        return 0.0
+
+    voice_fft = fft_mag[voice_mask]
+    voice_freqs = freqs[voice_mask]
+
+    # Require minimum energy to avoid detecting noise as pitch
+    if voice_fft.max() < 0.01:
+        return 0.0
+
+    # Peak frequency in voice range
+    peak_idx = voice_fft.argmax()
+    return float(voice_freqs[peak_idx])
