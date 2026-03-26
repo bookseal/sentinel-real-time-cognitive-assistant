@@ -1,147 +1,306 @@
 # 🛡️ Sentinel: Real-time Cognitive Assistant
 
+[![Live Demo](https://img.shields.io/badge/Live-sentinel.bit--habit.com-ff1744?style=for-the-badge&logo=kubernetes&logoColor=white)](https://sentinel.bit-habit.com)
+[![K3s](https://img.shields.io/badge/K3s-Oracle_OCI-326ce5?style=flat-square&logo=kubernetes)](https://sentinel.bit-habit.com)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776ab?style=flat-square&logo=python)](https://python.org)
+[![Gradio](https://img.shields.io/badge/Gradio-4.0+-f97316?style=flat-square)](https://gradio.app)
+
 > **"Converting conversational noise into verified signal through emotional and factual surveillance."**
 
-## 1. Project Goals (The North Star)
-
-The primary objective of **Sentinel** is to serve as an objective, third-party observer in high-stakes environments.
-
-- **Enforce Rationality**: Monitor and alert when emotions override logic.
-- **Ensure Truth**: Cross-reference verbal claims with real-time data.
-- **Leverage Knowledge**: Act as a "Technical Master" assistant that filters irrelevant data.
-- **Infrastructure Excellence**: Deploy as a resilient microservice on the `bit-habit` ecosystem.
+Sentinel is a real-time meeting intelligence system that monitors vocal arousal, detects factual claims, verifies them against the web, and intervenes when conflict escalates — all while minimizing cloud API costs through local-first computation.
 
 ---
 
-## 2. MVP Focus: Emotional Sentinel
+## Live Deployment
 
-For the Minimum Viable Product (MVP), we focus strictly on **Vocal Arousal Monitoring**.
+**🌐 https://sentinel.bit-habit.com**
 
-- **The Red Light**: When the system detects high-arousal emotions (anger, extreme stress), it triggers a visual "Red Light" alert.
-- **Objective**: Prevent "Emotional Hijacking" and maintain professional integrity in meetings.
+Sentinel runs as a containerized microservice on **K3s (Oracle OCI)**, exposed via Traefik Ingress with automatic TLS. Connect your microphone and the system begins analyzing in real-time.
 
----
-
-## 3. Tech Stack (The Architecture)
-
-Our stack is chosen for **Operational Excellence** and **High-Performance Streaming**.
-
-| Layer              | Technology              | Reason                                               |
-| :----------------- | :---------------------- | :--------------------------------------------------- |
-| **Frontend**       | **Gradio**              | Rapid prototyping & native Python streaming support. |
-| **Backend**        | **Python (FastAPI)**    | High-concurrency support for WebSocket connections.  |
-| **AI Engine**      | **OpenAI Realtime API** | Ultra-low latency speech-to-sentiment processing.    |
-| **Orchestration**  | **LangGraph**           | Complex state management for agentic workflows.      |
-| **Infrastructure** | **k3s on Oracle OCI**   | Resilient hosting at `sentinel.bit-habit.com`.       |
-
----
-
-## 4. Git Workflow Structure
-
-We follow the **"Feature Branch"** model to maintain codebase integrity.
-
-1. **`main`**: Production-ready code. Auto-deployed to k3s.
-2. **`develop`**: Integration branch for new features.
-3. **`feature/name`**: Individual task branches (e.g., `feature/emotion-logic`).
-
----
-
-## 5. Testing Methodology
-
-- **Unit Testing**: Test the `Emotion Scoring` logic with recorded audio clips.
-- **Integration Testing**: Verify WebSocket latency between Gradio and OpenAI.
-- **Stress Test**: Role-play a heated debate to see if the "Red Light" triggers correctly.
-- **Frugality Check**: Monitor token usage to ensure 5-year FIRE goals are maintained.
-
----
-
-## 6. Detailed AI Agent TODO List (Phase-by-Phase)
-
-### Phase 1: Sensory Input Layer (STT & VAD)
-
-1. **Initialize Audio Stream**: Implement `gr.Audio(streaming=True)` in Gradio to capture 500ms chunks.
-2. **Local VAD Implementation**: Integrate **Silero VAD** on the local machine. The agent must only "wake up" and send data when actual human speech is detected.
-3. **WebSocket Handshake**: Establish a secure, bidirectional WebSocket connection to `api.openai.com/v1/realtime`.
-4. **Buffer Management**: Create a circular buffer to manage audio chunks and prevent memory leaks.
-
-#### Architectural Flow: Data Pipeline
-
-When a user connects to `https://sentinel.bit-habit.com`, the audio data travels through the following architectural layers before the UI is updated with STT and emotion scores.
-
-```mermaid
-sequenceDiagram
-    participant User as 🌐 Browser (User)
-    participant K8s as ☁️ K3s Ingress/Service
-    participant App as 🖥️ app.py (UI & Core)
-    participant VAD as 🔊 vad.py (Silence Filter)
-    participant Buffer as 💾 audio_buffer.py (Memory)
-    participant WS as 🚀 ws_client.py (WebSocket)
-    participant OpenAI as 🧠 OpenAI Realtime API
-
-    User->>K8s: 1. Connects to bit-habit.com
-    K8s->>App: Routes traffic to Pod (Port 7860)
-    User->>App: 2. Streams raw audio chunks (500ms)
-    App->>VAD: 3. Is this human speech?
-    alt Speech Detected (Prob > 0.5)
-        VAD-->>App: Yes!
-        App->>Buffer: 4. Push exact audio frames
-        App->>WS: Send valid audio frame
-        WS->>OpenAI: 5. Transmit via Base64 WSS
-        OpenAI-->>WS: Return STT delta & `report_emotion`
-        WS-->>App: Parse STT & Emotion Score
-        App-->>User: 6. Refresh UI Dashboard
-    else Silence
-        VAD-->>App: No (Ignore chunk)
-    end
+```
+Browser → K3s Ingress (Traefik + TLS) → Sentinel Pod (port 7860) → Gradio UI
 ```
 
-**Step-by-Step Breakdown:**
+---
 
-1. **🌐 Cloud Infrastructure Entry (`k8s/` & `Dockerfile`)**
-   Traffic reaching `sentinel.bit-habit.com` is intercepted by the Kubernetes (K3s) Ingress. The `ingress.yaml` and `service.yaml` route the external HTTPS requests into the secure Docker container deployed via `deployment.yaml`.
-2. **🖥️ Frontend UI & Audio Ingestion (`app.py`)**
-   Serving as the control center, `app.py` renders the Gradio interface. Once the user grants microphone access, it continuously captures 500ms audio chunks (PCM format) and manages the overarching state of the application.
-3. **🔊 Voice Activity Detection (`vad.py`)**
-   Acting as the analytical gatekeeper, the Silero-VAD model inspects every incoming chunk. It filters out silence and background noise, only allowing data to proceed if the speech probability exceeds the 0.5 threshold.
-4. **💾 Memory Management (`audio_buffer.py`)**
-   Valid speech chunks are safely stored inside a thread-safe Circular Queue buffer. This prevents memory overflow during long sessions by retaining only the recent context (e.g., 15 seconds capacity) and discarding old data.
-5. **🚀 OpenAI API Communication (`ws_client.py`)**
-   Concurrently, valid audio frames are converted to Base64 and pumped directly into a persistent WebSocket connection hooked specifically to the OpenAI Realtime API.
-6. **🔄 Instantaneous UI Updates**
-   As the user speaks, the `ws_client.py` receives async events (like `response.audio_transcript.delta` and the custom tool call `report_emotion`). `app.py` parses these values to immediately update the real-time textual transcript and the visual Emotional Arousal gauge on the dashboard.
+## Architecture Overview
 
-### Phase 2: Cognitive Processing Layer (Sentiment & Intensity)
+```mermaid
+graph TD
+    A[🎤 Browser Microphone] -->|500ms chunks| B[Gradio Streaming UI]
+    B --> C[Resample 16kHz]
+    C --> D{Silero VAD}
+    C --> E[🔊 Volume Guard<br/>Phase 01]
 
-1. **System Prompt Engineering**: Design a specialized prompt for the "Sentinel Agent".
-   - _Instruction_: "Monitor the input stream for signs of anger or aggression. Output JSON: `{ "score": 0.0-1.0, "reason": "string" }`".
-2. **Multimodal Data Fusion**:
-   - **Textual Sentiment**: Use the LLM to analyze transcript semantic intensity.
-   - **Audio Metadata**: Extract RMS (volume) and Pitch variance from the raw buffer.
-3. **Intensity Logic ($E$)**:
-   $$E = \omega_1 \cdot \Delta P + \omega_2 \cdot V_{rms} + \omega_3 \cdot S_{agg}$$
-   - _Intuitive Meaning_: Emotional Intensity $E$ is the weighted sum of Pitch Variance, RMS Volume, and Sentiment Aggression.
-4. **Smoothing Algorithm**: Implement a 3-second sliding window average for $E$ to stabilize the visual output.
+    D -->|Speech| F[Circular Buffer<br/>30 chunks / 15s]
+    D -->|Silence| G[Dropped — $0]
+    F --> H[WebSocket Client]
+    H --> I[☁️ OpenAI Realtime API<br/>or 🏠 Local vLLM]
 
-### Phase 3: Action & Feedback Layer (The Red Light)
+    I --> J[📝 Transcript + Emotion Score]
+    J --> K[🎭 Speaker Diarization<br/>Phase 03]
+    J --> L[🔍 Claim Detection<br/>Phase 04]
+    L --> M[✅ Fact-Check Oracle<br/>Phase 05]
+    J --> N[📋 Action Items<br/>Phase 06]
 
-1. **Threshold Triggering**: Define $\theta_e$ (Emotion Threshold).
-   - If $E > 0.7$, trigger the **Red Light**.
-   - If $0.5 < E \le 0.7$, trigger a **Yellow Light**.
-2. **Reactive UI**: Create an HTML/CSS component in Gradio that updates background color in real-time via WebSocket events.
-3. **Alert Logging**: Store "Red Light" events with timestamps for post-meeting review.
+    C --> O[📷 Webcam Capture<br/>Phase 07]
+    O --> P[Mediapipe Face Mesh]
 
-### Phase 4: Cloud-Native Infrastructure & Deployment (k3s)
+    E --> Q[Sentinel Index<br/>Si = 0.6×Audio + 0.4×Vision]
+    P --> Q
+    J --> Q
 
-1. **Dockerization**: Create a multi-stage `Dockerfile` optimized for Python and audio processing libraries.
-2. **K8s Manifests**: Write Deployment and Service YAMLs for the `sentinel` namespace.
-3. **Helm Chart Creation**: Package the application into a Helm chart for version-controlled deployments.
-4. **Ingress Configuration**:
-   - Configure **Traefik IngressRoute** for `sentinel.bit-habit.com`.
-   - Enable **WebSocket support** and **Middleware** (Rate-limit, Retry).
-5. **TLS Automation**: Use `cert-manager` to automate Wildcard TLS for the custom domain.
-6. **GitOps Integration**: Set up a GitHub Action to auto-deploy to the k3s cluster on every push to `main`.
-7. **Liveness/Readiness Probes**: Implement health check endpoints to ensure 99.9% uptime.
+    Q --> R{Si > 0.8?}
+    R -->|Yes| S[🔔 Slack/Zoom Alert<br/>Phase 09]
+    R -->|Si > 0.9 for 10s| T[🕊️ Verbal Mediation<br/>Phase 10]
+
+    style E fill:#ff1744,color:#fff
+    style G fill:#333,color:#888
+    style Q fill:#ffab00,color:#000
+    style T fill:#4fc3f7,color:#000
+```
 
 ---
 
-© 2026 Gichan Lee. Deployed via k3s. Served by Traefik.
+## The 10 Phases
+
+Sentinel is built in 10 incremental phases, each on its own feature branch. The philosophy: **local computation first, cloud only when necessary**.
+
+### Phase 01 — 🔊 Local Volume Guard
+> **Branch**: `feature/phase-01-volume-guard`
+
+Detects shouting using NumPy RMS → dB conversion. Zero cloud calls, zero cost, sub-10ms latency.
+
+| Key | Value |
+|-----|-------|
+| Shout Threshold | 85 dB SPL |
+| Sliding Window | 5 chunks (2.5s) |
+| Cost | **$0.00** |
+| Core File | [`audio_logic.py`](audio_logic.py) |
+
+---
+
+### Phase 02 — 🧠 VAD-Gated Emotion Guard
+> **Branch**: `feature/phase-02-emotion-guard`
+
+Silero VAD gates the OpenAI API — only speech gets sent, silence costs $0. Includes a 1-second grace period to prevent cutting off mid-sentence.
+
+| Key | Value |
+|-----|-------|
+| VAD Threshold | P(speech) > 0.5 |
+| Grace Period | 2 chunks (~1s) |
+| Emotion Output | Arousal 0.0–1.0 via `report_emotion` tool |
+| Core Files | [`vad.py`](vad.py), [`ws_client.py`](ws_client.py) |
+
+---
+
+### Phase 03 — 🎭 Speaker Diarization
+> **Branch**: `feature/phase-03-diarization`
+
+Identifies **who** is speaking and renders color-coded chat bubbles. Users can assign custom names via the Speaker Legend panel.
+
+| Key | Value |
+|-----|-------|
+| Speaker Colors | 5 distinct colors (blue, green, orange, pink, purple) |
+| Name Assignment | Manual via UI (e.g., `speaker_0` → "Gichan") |
+| Core File | [`app.py`](app.py) — `SPEAKER_COLORS`, `update_speaker_name()` |
+
+---
+
+### Phase 04 — 🔍 Claim Detection (LangGraph)
+> **Branch**: `feature/phase-04-claim-detection`
+
+Filters conversation to find **checkable facts** using regex pattern matching — no LLM needed. Only high-confidence claims (≥0.6) trigger highlighting.
+
+| Key | Value |
+|-----|-------|
+| Pattern Categories | 6 (numbers, dates, statistics, absolutes, named entities, factual assertions) |
+| Confidence Formula | `0.5 + matched_patterns × 0.15` |
+| False Positive Guard | 4 small-talk rejection patterns |
+| Core File | [`agent/claim_detector.py`](agent/claim_detector.py) |
+
+---
+
+### Phase 05 — ✅ Fact-Check Oracle (Tavily)
+> **Branch**: `feature/phase-05-fact-check`
+
+Detected claims are verified against the web using **Tavily AI Search** + **GPT-4o-mini** as a judge. Returns: Verified, False, or Disputed.
+
+| Key | Value |
+|-----|-------|
+| Search Engine | Tavily (LLM-ready content) |
+| Judge Model | GPT-4o-mini ($0.15/1M tokens) |
+| Target SLA | < 5 seconds |
+| Core Files | [`tools/search.py`](tools/search.py), [`agent/verifier.py`](agent/verifier.py) |
+
+---
+
+### Phase 06 — 📋 Action Item Extraction
+> **Branch**: `feature/phase-06-action-items`
+
+Automatically extracts commitments ("I will send the report by Friday") from live conversation. Exports as downloadable `.md` file.
+
+| Key | Value |
+|-----|-------|
+| Commitment Patterns | 8 regex patterns |
+| Vague Rejection | "I'll do it later" → filtered out |
+| Export | Markdown table with Task, Owner, Deadline |
+| Core File | [`agent/summarizer.py`](agent/summarizer.py) |
+
+---
+
+### Phase 07 — 📷 Multi-modal Vision Guard
+> **Branch**: `feature/phase-07-vision`
+
+Webcam detects facial stress (brow furrow, jaw clench, eye squint) using **Mediapipe Face Mesh** — 100% local, no frames sent externally. Fused with audio into the **Sentinel Index**.
+
+| Key | Value |
+|-----|-------|
+| Landmarks | 468 (Mediapipe Face Mesh) |
+| Stress Formula | `0.4×brow + 0.35×jaw + 0.25×eye` |
+| Sentinel Index | `Si = 0.6×Audio + 0.4×Vision` |
+| Core File | [`vision/face_monitor.py`](vision/face_monitor.py) |
+
+---
+
+### Phase 08 — 🏠 Edge AI ($0 Token Migration)
+> **Branch**: `feature/phase-08-edge-ai`
+
+Switch from OpenAI cloud to local **vLLM** (Llama-3 8B) or **Ollama** with one environment variable. Same WebSocket interface, zero variable cost.
+
+| Key | Value |
+|-----|-------|
+| Switch | `LLM_PROVIDER=local` |
+| Local Model | Meta-Llama-3-8B-Instruct |
+| GPU Requirement | 1× NVIDIA (8–16 GB VRAM) |
+| Core Files | [`k8s/vllm-deployment.yaml`](k8s/vllm-deployment.yaml), [`ws_client.py`](ws_client.py) |
+
+---
+
+### Phase 09 — 🔔 Ecosystem Integration (Slack/Zoom)
+> **Branch**: `feature/phase-09-integration`
+
+When the Sentinel Index exceeds threshold, alerts fire to **Slack** and **Zoom** automatically. 5-minute cool-down prevents spam.
+
+| Key | Value |
+|-----|-------|
+| Channels | Slack Incoming Webhook, Zoom Chat API |
+| Red Alert Threshold | Si ≥ 0.8 |
+| Critical Threshold | Si ≥ 0.9 |
+| Cool-down | 300 seconds (5 min) |
+| Core File | [`integration/dispatcher.py`](integration/dispatcher.py) |
+
+---
+
+### Phase 10 — 🕊️ Autonomous Verbal Mediation
+> **Branch**: `feature/phase-10-mediation`
+
+When conflict escalates beyond 0.9 for 10+ seconds, Sentinel generates a calming de-escalation message via **OpenAI TTS** and plays it to the meeting. Users have a "Silence Sentinel" override button.
+
+| Key | Value |
+|-----|-------|
+| Trigger | Si > 0.9 sustained for 10s |
+| TTS Voice | `nova` (calm, authoritative) at 0.9× speed |
+| Cool-down | 120 seconds between interventions |
+| Safety | "Silence Sentinel" button (user override) |
+| Core File | [`agent/mediator.py`](agent/mediator.py) |
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Role |
+|-------|-----------|------|
+| **Frontend** | Gradio 4.0+ | Real-time streaming UI with audio input |
+| **Audio AI** | Silero VAD v5 | Local voice activity detection (CPU) |
+| **Speech** | OpenAI Realtime API | Transcription + emotion analysis |
+| **Vision** | Mediapipe Face Mesh | Local facial stress detection |
+| **Search** | Tavily AI Search | LLM-ready web search for fact-checking |
+| **Agent** | LangGraph (concept) | Stateful claim detection pipeline |
+| **LLM** | GPT-4o-mini / Llama-3 8B | Judge node, action extraction, mediation scripts |
+| **TTS** | OpenAI TTS (nova) | Verbal de-escalation audio |
+| **Infra** | K3s on Oracle OCI | Production Kubernetes cluster |
+| **Ingress** | Traefik + TLS | HTTPS routing at `sentinel.bit-habit.com` |
+| **Alerts** | Slack / Zoom Webhooks | External notification channels |
+
+---
+
+## Quick Start
+
+```bash
+# 1. Clone
+git clone git@github.com:bookseal/sentinel-real-time-cognitive-assistant.git
+cd sentinel-real-time-cognitive-assistant
+
+# 2. Configure
+echo "OPENAI_API_KEY=sk-..." > .env
+
+# 3. Run
+docker-compose up -d --build
+docker compose logs -f    # Find the gradio.live link
+
+# 4. Open browser → allow microphone → start speaking
+```
+
+---
+
+## Project Structure
+
+```
+sentinel-real-time-cognitive-assistant/
+├── app.py                    # Main Gradio UI + audio processing pipeline
+├── audio_logic.py            # Phase 01: RMS dB calculation, volume thresholds
+├── audio_buffer.py           # Thread-safe circular buffer (30 chunks)
+├── vad.py                    # Silero VAD wrapper with grace period
+├── ws_client.py              # OpenAI Realtime API WebSocket client
+├── agent/
+│   ├── claim_detector.py     # Phase 04: Regex-based claim classification
+│   ├── verifier.py           # Phase 05: Tavily + GPT-4o-mini fact-check
+│   ├── summarizer.py         # Phase 06: Action item extraction
+│   └── mediator.py           # Phase 10: TTS verbal mediation
+├── tools/
+│   └── search.py             # Phase 05: Tavily AI Search wrapper
+├── vision/
+│   └── face_monitor.py       # Phase 07: Mediapipe facial stress detection
+├── integration/
+│   └── dispatcher.py         # Phase 09: Slack/Zoom alert dispatcher
+├── k8s/
+│   ├── deployment.yaml       # Pod spec with health probes
+│   ├── service.yaml          # ClusterIP (port 80 → 7860)
+│   ├── ingress.yaml          # Traefik ingress for sentinel.bit-habit.com
+│   ├── vllm-deployment.yaml  # Phase 08: Local vLLM/Ollama deployment
+│   └── secret.yaml.example   # Template (real secret is .gitignored)
+├── docs/
+│   ├── PLAN.md               # Full 10-phase execution blueprint
+│   └── phase-XX-flow.md      # Per-phase 3-chapter engineering guides
+├── Dockerfile
+├── docker-compose.yml
+└── requirements.txt
+```
+
+---
+
+## Git Workflow
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Production — mirrors K3s deployment |
+| `develop` | Integration staging |
+| `feature/phase-XX-*` | Phase implementation branches |
+
+**Commit format**: [Conventional Commits](https://www.conventionalcommits.org/) — `type(scope): description`
+
+---
+
+## Development Philosophy
+
+> *"Cost is a technical debt. Minimize token burn through local logic."*
+
+1. **Local First**: Compute locally (NumPy, Silero, Mediapipe) before calling any cloud API
+2. **Frugal Architecture**: VAD-gate every API call — never send silence to OpenAI
+3. **Progressive Enhancement**: Each phase adds capability without breaking previous layers
+4. **Graceful Degradation**: Missing API keys? The system falls back to local-only mode
+
+---
+
+© 2026 Gichan Lee. Built on 42 Seoul Foundations. Deployed via K3s on Oracle OCI. Served by Traefik.
