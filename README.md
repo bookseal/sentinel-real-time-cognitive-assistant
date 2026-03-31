@@ -13,7 +13,23 @@ The primary objective of **Sentinel** is to serve as an objective, third-party o
 
 ---
 
-## 2. MVP Focus: Emotional Sentinel
+## 2. Current Status: Phase 00 — Minimal Volume Gauge
+
+Phase 00 is **live** at [sentinel.bit-habit.com](https://sentinel.bit-habit.com).
+
+A stripped-down proof-of-concept: mic button + real-time volume (dB) gauge.
+No AI, no cloud API — just Gradio + NumPy running on k3s.
+
+- **What it does**: Streams browser mic → computes RMS dB → renders a color-coded volume bar
+- **Stack**: `gradio` + `numpy` only (no torch, no VAD)
+- **Why**: Validate the end-to-end pipeline (code → Docker → k3s → browser) before adding complexity
+
+> For full details — build, deploy, traffic flow, and commands — see
+> **[docs/phase-00-guide.md](docs/phase-00-guide.md)**
+
+---
+
+## 3. MVP Goal: Emotional Sentinel
 
 For the Minimum Viable Product (MVP), we focus strictly on **Vocal Arousal Monitoring**.
 
@@ -22,7 +38,7 @@ For the Minimum Viable Product (MVP), we focus strictly on **Vocal Arousal Monit
 
 ---
 
-## 3. Tech Stack (The Architecture)
+## 4. Tech Stack (The Architecture)
 
 Our stack is chosen for **Operational Excellence** and **High-Performance Streaming**.
 
@@ -36,7 +52,7 @@ Our stack is chosen for **Operational Excellence** and **High-Performance Stream
 
 ---
 
-## 4. Git Workflow Structure
+## 5. Git Workflow Structure
 
 We follow the **"Feature Branch"** model to maintain codebase integrity.
 
@@ -46,7 +62,7 @@ We follow the **"Feature Branch"** model to maintain codebase integrity.
 
 ---
 
-## 5. Testing Methodology
+## 6. Testing Methodology
 
 - **Unit Testing**: Test the `Emotion Scoring` logic with recorded audio clips.
 - **Integration Testing**: Verify WebSocket latency between Gradio and OpenAI.
@@ -55,7 +71,7 @@ We follow the **"Feature Branch"** model to maintain codebase integrity.
 
 ---
 
-## 6. Detailed AI Agent TODO List (Phase-by-Phase)
+## 7. Detailed AI Agent TODO List (Phase-by-Phase)
 
 ### Phase 1: Sensory Input Layer (STT & VAD)
 
