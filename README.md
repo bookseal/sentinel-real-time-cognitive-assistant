@@ -21,6 +21,23 @@ Sentinel runs as a containerized microservice on **K3s (Oracle OCI)**, exposed v
 Browser → K3s Ingress (Traefik + TLS) → Sentinel Pod (port 7860) → Gradio UI
 ```
 
+## 2. Current Status: Phase 00 — Minimal Volume Gauge
+
+Phase 00 is **live** at [sentinel.bit-habit.com](https://sentinel.bit-habit.com).
+
+A stripped-down proof-of-concept: mic button + real-time volume (dB) gauge.
+No AI, no cloud API — just Gradio + NumPy running on k3s.
+
+- **What it does**: Streams browser mic → computes RMS dB → renders a color-coded volume bar
+- **Stack**: `gradio` + `numpy` only (no torch, no VAD)
+- **Why**: Validate the end-to-end pipeline (code → Docker → k3s → browser) before adding complexity
+
+> For full details — build, deploy, traffic flow, and commands — see
+> **[docs/phase-00-guide.md](docs/phase-00-guide.md)**
+
+---
+
+## 3. MVP Goal: Emotional Sentinel
 ---
 
 ## Architecture Overview
@@ -62,6 +79,7 @@ graph TD
 
 ---
 
+## 4. Tech Stack (The Architecture)
 ## The 10 Phases
 
 Sentinel is built in 10 incremental phases, each on its own feature branch. The philosophy: **local computation first, cloud only when necessary**.
@@ -101,6 +119,7 @@ graph LR
 
 ---
 
+## 5. Git Workflow Structure
 ### Phase 02 — 🧠 VAD-Gated Emotion Guard
 > **Branch**: `feature/phase-02-emotion-guard`
 

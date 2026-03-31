@@ -1,25 +1,47 @@
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# =============================================================================
+# Ingress — the "front door" that routes external HTTP(S) traffic to a Service
+# Flow: Browser → DNS → Traefik (Ingress Controller) → Service → Pod
+# =============================================================================
+
+# --- API & Kind ---------------------------------------------------------------
+apiVersion: networking.k8s.io/v1   # stable networking API
+kind: Ingress                      # exposes Services to the outside world
+
+# --- Metadata -----------------------------------------------------------------
 metadata:
   name: sentinel-ingress
   namespace: default
+
+  # -- Annotations: extra config for the Ingress Controller -------------------
+  # These are NOT standard K8s — they are Traefik-specific settings
   annotations:
-    kubernetes.io/ingress.class: traefik
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
+    kubernetes.io/ingress.class: traefik                          # which ingress controller handles this
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure   # listen on HTTPS (port 443) only
+    traefik.ingress.kubernetes.io/router.tls: "true"              # enforce TLS termination
+
+# --- Spec (Routing Rules) -----------------------------------------------------
 spec:
+
+  # -- TLS: HTTPS certificate config ------------------------------------------
+  # Traefik terminates TLS here, then forwards plain HTTP to the Service
   tls:
     - hosts:
-        - sentinel.bit-habit.com
-      secretName: tls-secret
+        - sentinel.bit-habit.com    # domain this cert covers
+      secretName: tls-secret        # K8s Secret holding the cert + private key
+                                    # (provisioned by cert-manager / Let's Encrypt)
+
+  # -- Rules: "which domain + path goes to which Service" ----------------------
   rules:
-    - host: sentinel.bit-habit.com
+    - host: sentinel.bit-habit.com  # match requests with this Host header
       http:
         paths:
-          - path: /
-            pathType: Prefix
+          - path: /                 # match all paths starting with /
+            pathType: Prefix        # Prefix = "/foo" matches "/foo/bar" too
+                                    # (vs Exact = only exact match)
+            # -- Backend: where to send matched traffic ------------------------
             backend:
               service:
-                name: sentinel-svc
+                name: sentinel-svc  # target Service name (see service.yaml)
                 port:
-                  number: 80
+                  number: 80        # Service port (NOT the container port)
+                                    # Service 80 → Pod 7860 (mapped in service.yaml)
