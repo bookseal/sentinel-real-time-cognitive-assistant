@@ -1,89 +1,137 @@
-# -----------------------------------------------------------------------------
+# =============================================================================
 # app.py — Phase 00: Minimal Volume Gauge
 #
-# Purpose: Stream microphone audio and display a real-time volume (dB) gauge.
-#          No cloud API. No VAD. No pitch. Pure NumPy RMS only.
-# -----------------------------------------------------------------------------
+# Data flow (this is the entire app):
+#
+#   [Browser Mic] --chunk every ~500ms--> [process_audio()]
+#                                             |
+#                                         compute_volume_db()
+#                                             |
+#                                         generate_gauge_html()
+#                                             |
+#                                  <--HTML gauge update-- [Browser]
+# =============================================================================
 
 import logging
 
 import gradio as gr
 import numpy as np
 
+# =============================================================================
+# Logging — Python's built-in way to print debug/info/error messages
+# =============================================================================
+# Why not just print()? logging gives you:
+#   - Timestamps automatically
+#   - Severity levels: DEBUG < INFO < WARNING < ERROR < CRITICAL
+#   - Easy to turn on/off by level (e.g. show only ERROR in production)
+#
+# Usage:
+#   logger.info("server started")      → 2026-03-31 11:00:00 [INFO] sentinel: server started
+#   logger.error("something broke")    → 2026-03-31 11:00:00 [ERROR] sentinel: something broke
+#   logger.debug("x = 42")            → (hidden by default, level=DEBUG to show)
+
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=logging.INFO,                                     # show INFO and above (hide DEBUG)
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",  # output format template
 )
-logger = logging.getLogger("sentinel")
+logger = logging.getLogger("sentinel")   # create a logger named "sentinel"
 
-TARGET_SAMPLE_RATE = 16000
 
-# Thresholds (dB SPL approximation)
-WARNING_DB = 60.0
-ALERT_DB = 70.0
+# =============================================================================
+# Constants
+# =============================================================================
+WARNING_DB = 60.0    # yellow threshold — elevated voice
+ALERT_DB = 70.0      # red threshold — shouting
 
+
+# =============================================================================
+# Audio Analysis
+# =============================================================================
+
+# Python type hints:
+#   def foo(x: int) -> str:
+#       ^^^^^^^^      ^^^^
+#       parameter      return type
+#       type hint      hint
+#
+# These are just LABELS for humans and editors (IDE autocomplete, error checking).
+# Python does NOT enforce them at runtime. You could return an int and Python won't complain.
+# But your IDE will show a warning, which helps catch bugs early.
 
 def compute_volume_db(audio: np.ndarray) -> float:
-    """Convert audio samples to approximate dB SPL via RMS."""
+    """Convert raw audio samples to decibels (dB).
+
+    Steps:
+      1. Normalize: int samples (e.g. -32768~32767) → float (-1.0~1.0)
+      2. RMS: Root Mean Square — average loudness of the chunk
+      3. dB: 20 * log10(rms) + 94  →  human-readable loudness scale
+    """
     if len(audio) == 0:
         return 0.0
+
+    # Step 1 — normalize integer audio to float range [-1.0, 1.0]
     audio_f = audio.astype(np.float32)
     if np.issubdtype(audio.dtype, np.integer):
         audio_f = audio_f / max(np.iinfo(audio.dtype).max, 1)
+
+    # Step 2 — RMS (Root Mean Square): sqrt(mean(samples²))
+    #   silence → 0.0,  normal talk → ~0.01,  shouting → ~0.1
     rms = float(np.sqrt(np.mean(audio_f ** 2)))
     if rms < 1e-10:
         return 0.0
-    db = 20 * np.log10(rms) + 94  # 0 dBFS ≈ 94 dB SPL
+
+    # Step 3 — convert to dB (logarithmic, matches how humans hear)
+    #   +94 offset: in acoustics, digital 0 dBFS ≈ 94 dB SPL
+    db = 20 * np.log10(rms) + 94
     return max(db, 0.0)
 
 
+# =============================================================================
+# HTML Gauge — the visual output sent to the browser
+# =============================================================================
 def generate_gauge_html(db: float) -> str:
-    """Render a simple volume bar + dB readout."""
-    if db >= ALERT_DB:
-        color = "#ff1744"
-        label = "LOUD"
-    elif db >= WARNING_DB:
-        color = "#ffab00"
-        label = "MODERATE"
-    else:
-        color = "#00e676"
-        label = "QUIET"
+    """Return an HTML string with a colored volume bar.
 
+    Color: green (quiet) → yellow (moderate) → red (loud)
+    """
+    if db >= ALERT_DB:
+        color, label = "red", "LOUD"
+    elif db >= WARNING_DB:
+        color, label = "orange", "MODERATE"
+    else:
+        color, label = "green", "QUIET"
+
+    # Map dB [30~100] → bar width [0%~100%]
     pct = min(max((db - 30) / 70 * 100, 0), 100)
 
     return f"""
-    <div style="
-        font-family: 'Inter', 'Segoe UI', sans-serif;
-        background: #161b2e;
-        border-radius: 14px;
-        padding: 22px;
-        color: #f5f5f5;
-        border: 1px solid #2d3352;
-    ">
-        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;margin-bottom:8px;">
-            <span style="color:#f0f0f5;">VOLUME</span>
-            <span style="color:{color};">{db:.1f} dB — {label}</span>
-        </div>
-        <div style="background:#0d1020;border-radius:8px;height:20px;overflow:hidden;">
-            <div style="
-                width:{pct:.1f}%;
-                height:100%;
-                background:{color};
-                border-radius:8px;
-                transition: width 0.15s ease;
-            "></div>
+    <div style="padding:16px;">
+        <p><strong>Volume:</strong> {db:.1f} dB — <span style="color:{color};">{label}</span></p>
+        <div style="background:#ddd; border-radius:8px; height:24px;">
+            <div style="width:{pct:.1f}%; height:100%; background:{color};
+                        border-radius:8px; transition:width 0.15s;">
+            </div>
         </div>
     </div>
     """
 
 
+# =============================================================================
+# Audio Processing — Gradio calls this on every mic chunk (~500ms)
+# =============================================================================
 def process_audio(audio_data):
-    """Process a streaming audio chunk and return updated gauge HTML."""
+    """Receive a streaming audio chunk, return updated gauge HTML.
+
+    Gradio sends audio_data as a tuple:
+      (sample_rate, audio_array)
+       e.g. (48000, np.array([0, 12, -34, ...]))
+    """
     if audio_data is None:
         return generate_gauge_html(0)
 
     sample_rate, audio = audio_data
 
+    # Stereo → Mono (average left + right channels)
     if audio.ndim > 1:
         audio = audio.mean(axis=1).astype(audio.dtype)
 
@@ -91,54 +139,31 @@ def process_audio(audio_data):
     return generate_gauge_html(db)
 
 
+# =============================================================================
+# Gradio UI — build the web page
+# =============================================================================
 def build_app() -> gr.Blocks:
-    css = """
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-    .gradio-container {
-        font-family: 'Inter', sans-serif !important;
-        background: linear-gradient(180deg, #0a0a1a 0%, #111122 100%) !important;
-        max-width: 520px !important;
-        margin: 0 auto !important;
-    }
-    .dark { --body-background-fill: #0a0a1a !important; }
-    footer { display: none !important; }
-    [data-testid="waveform-x"] { display: none !important; }
-    .audio-component .waveform-container { display: none !important; }
-    .audio-component canvas { display: none !important; }
-    .audio-component .timestamps { display: none !important; }
-    .audio-component .error { display: none !important; }
-    .audio-component .controls { justify-content: center !important; }
-    """
+    # gr.Blocks = a container for laying out Gradio components
+    # (like a blank HTML page you fill with widgets)
+    with gr.Blocks(title="Sentinel — Volume Gauge") as app:
 
-    with gr.Blocks(
-        title="Sentinel — Volume Gauge",
-        css=css,
-        theme=gr.themes.Base(primary_hue="red", neutral_hue="slate"),
-    ) as app:
+        gr.Markdown("# Sentinel\nPhase 00 — Volume Gauge")
 
-        gr.HTML("""
-            <div style="text-align:center;padding:16px 0 8px;">
-                <h1 style="
-                    background: linear-gradient(135deg, #ff6b6b, #ffa07a, #ff1744);
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                    font-size: 1.8em; font-weight: 700; margin: 0;
-                ">Sentinel</h1>
-                <p style="color:#a0a5b5;font-size:0.85em;margin:4px 0 0;">
-                    Phase 00 — Volume Gauge
-                </p>
-            </div>
-        """)
-
+        # Microphone input — streams audio chunks in real-time
         audio_input = gr.Audio(
             sources=["microphone"],
-            streaming=True,
+            streaming=True,        # real-time streaming (not "record then submit")
             label="Tap to Record",
-            type="numpy",
+            type="numpy",          # return format: (sample_rate, np.ndarray)
         )
 
+        # Volume gauge — plain HTML, updated on every chunk
         gauge = gr.HTML(value=generate_gauge_html(0))
 
+        # Wiring: connect audio stream → processing function → gauge output
+        # Every ~500ms: audio_input produces a chunk
+        #   → process_audio(chunk) runs
+        #   → return value replaces gauge HTML
         audio_input.stream(
             fn=process_audio,
             inputs=[audio_input],
@@ -148,11 +173,18 @@ def build_app() -> gr.Blocks:
     return app
 
 
+# =============================================================================
+# Entry Point
+# =============================================================================
+# __name__ == "__main__" means: "only run this when executing the file directly"
+#   python app.py        → __name__ is "__main__" → runs
+#   import app           → __name__ is "app"      → skipped (just imports functions)
+
 if __name__ == "__main__":
     logger.info("Starting Sentinel Phase 00 — Minimal Volume Gauge")
     app = build_app()
     app.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        show_error=True,
+        server_name="0.0.0.0",   # listen on all interfaces (required in Docker)
+        server_port=7860,         # port number (matches Dockerfile EXPOSE)
+        show_error=True,          # show Python errors in browser (helpful for dev)
     )

@@ -1,46 +1,80 @@
-apiVersion: apps/v1
-kind: Deployment
+# =============================================================================
+# Deployment — tells K8s "run N copies of this container and keep them alive"
+# =============================================================================
+
+# --- API & Kind ---------------------------------------------------------------
+# Which K8s API group to use and what resource type this file defines
+apiVersion: apps/v1       # apps/v1 is the stable API for Deployments
+kind: Deployment          # Other kinds: Pod, Service, Ingress, StatefulSet, ...
+
+# --- Metadata -----------------------------------------------------------------
+# Identity of this Deployment object inside the cluster
 metadata:
-  name: sentinel
-  namespace: default
+  name: sentinel          # unique name — used in: kubectl get deployment sentinel
+  namespace: default      # which namespace it lives in (default = the default one)
   labels:
-    app: sentinel
+    app: sentinel         # arbitrary key-value tag — used for grouping & selecting
+
+# --- Spec (Desired State) -----------------------------------------------------
+# "I want the cluster to look like this"
 spec:
-  replicas: 1
+  replicas: 1             # how many pod copies to run (scale up by changing this)
+
+  # -- Selector: how the Deployment finds its Pods -----------------------------
   selector:
     matchLabels:
-      app: sentinel
+      app: sentinel       # must match template.metadata.labels below
+
+  # -- Pod Template: blueprint for each replica --------------------------------
   template:
     metadata:
       labels:
-        app: sentinel
+        app: sentinel     # pods get this label → selector above matches them
+
     spec:
       containers:
-        - name: sentinel
-          image: sentinel:latest
-          imagePullPolicy: Never
+        - name: sentinel  # container name inside the pod
+
+          # ---- Image ---------------------------------------------------------
+          image: sentinel:latest      # Docker/OCI image to run
+          imagePullPolicy: Never      # Never pull from registry — use local image
+                                      # (we import via: docker save | k3s ctr images import)
+
+          # ---- Ports ---------------------------------------------------------
           ports:
-            - containerPort: 7860
-              name: http
+            - containerPort: 7860     # the port Gradio listens on inside the container
+              name: http              # human-readable name (referenced by Service)
+
+          # ---- Environment ---------------------------------------------------
+          # Inject env vars from a K8s Secret object
           envFrom:
             - secretRef:
-                name: sentinel-secret
+                name: sentinel-secret # kubectl get secret sentinel-secret
+                                      # contains: OPENAI_API_KEY, etc.
+
+          # ---- Resources (CPU & Memory) --------------------------------------
+          # requests = guaranteed minimum; limits = hard ceiling
           resources:
             requests:
-              cpu: "200m"
-              memory: "512Mi"
+              cpu: "200m"             # 200 millicores = 0.2 CPU (guaranteed)
+              memory: "512Mi"         # 512 MiB RAM (guaranteed)
             limits:
-              cpu: "500m"
-              memory: "1Gi"
+              cpu: "500m"             # max 0.5 CPU — throttled if exceeded
+              memory: "1Gi"           # max 1 GiB RAM — OOMKilled if exceeded
+
+          # ---- Health Checks -------------------------------------------------
+          # livenessProbe: "is the process alive?" — restart if it fails
           livenessProbe:
             httpGet:
-              path: /
+              path: /                 # hit GET / on the container
               port: 7860
-            initialDelaySeconds: 20
-            periodSeconds: 30
+            initialDelaySeconds: 20   # wait 20s after start before first check
+            periodSeconds: 30         # then check every 30s
+
+          # readinessProbe: "is it ready for traffic?" — remove from Service if not
           readinessProbe:
             httpGet:
               path: /
               port: 7860
-            initialDelaySeconds: 10
-            periodSeconds: 10
+            initialDelaySeconds: 10   # wait 10s before first check
+            periodSeconds: 10         # check every 10s
