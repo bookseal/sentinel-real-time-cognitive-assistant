@@ -199,3 +199,147 @@ is already on this machine." That's why we manually import with `k3s ctr images 
 - Docker Compose: single-machine dev tool. No TLS, no health checks, no auto-restart.
 - k3s: lightweight Kubernetes. Handles TLS (cert-manager), health probes, rolling updates,
   resource limits, and can scale to multiple machines later.
+
+---
+
+## Infrastructure Status Report (2026-03-31)
+
+> Snapshot of the `bithabit` k3s cluster at the time of Phase 00 deployment.
+
+### Cluster Overview
+
+| Property | Value |
+|----------|-------|
+| Node | `bithabit` (single-node, control-plane) |
+| K3s Version | v1.34.4+k3s1 |
+| Container Runtime | containerd 2.1.5-k3s1 |
+| Ingress Controller | Traefik 3.6.7 |
+| OS | Ubuntu 20.04.6 LTS, kernel 5.15.0-1081-oracle |
+| CPU | 4 cores — **44% used** (1774m / 4000m) |
+| Memory | 24 Gi — **36% used** (8.7Gi / 24Gi) |
+| Disk | 97 Gi — **91% used** (88Gi / 97Gi) ⚠️ CRITICAL |
+
+### Services & Domains (15 domains via Traefik)
+
+```
+bit-habit.com              → static-web (startpage)
+www.bit-habit.com          → static-web
+blog.bit-habit.com         → ghost
+sentinel.bit-habit.com     → sentinel (Phase 00 — this app)
+argocd.bit-habit.com       → argocd-server
+habit.bit-habit.com        → bithabit-api
+booktoss.bit-habit.com     → booktoss
+code-server.bit-habit.com  → code-server ⚠️ (broken — missing secret)
+daily-seongsu.bit-habit.com → daily-seongsu
+seoul-apt.bit-habit.com    → seoul-apt-price
+startpage.bit-habit.com    → startpage
+viz.bit-habit.com          → viz-platform
+wiki.bit-habit.com         → wikijs
+www.wiki.bit-habit.com     → wikijs
+www.blog.bit-habit.com     → ghost
+```
+
+### Pod Health Summary
+
+**Healthy (24 Running)**:
+- `default`: sentinel, bithabit-api, booktoss, daily-seongsu, ghost, ghost-mysql,
+  seoul-apt-price, startpage, static-web, wikijs-db, wikijs, viz-platform
+- `argocd`: all 7 components (server, repo-server, redis, dex, etc.)
+- `cert-manager`: cert-manager, cainjector, webhook
+- `kube-system`: coredns, traefik, metrics-server, local-path-provisioner
+- `headlamp`: 1 instance running
+- `kubernetes-dashboard`: dashboard + metrics-scraper
+
+**Problematic (~28 pods)**:
+
+| Pod | Status | Cause |
+|-----|--------|-------|
+| code-server-5b6bc5dc9c-* | CreateContainerConfigError | Missing secret `code-server-secret` |
+| oauth2-proxy-* (headlamp) | CreateContainerConfigError | Missing secret `oauth2-proxy-secret` |
+| ~12 pods | Completed | Old finished jobs — safe to clean |
+| ~8 pods | ContainerStatusUnknown | Stale after node restart |
+
+### Resource Usage (Top Consumers)
+
+| Service | CPU | Memory |
+|---------|-----|--------|
+| sentinel | 58m | 82Mi |
+| wikijs | 22m | 112Mi |
+| code-server | 17m | 364Mi |
+| daily-seongsu | 8m | 165Mi |
+| ghost | 5m | 121Mi |
+| ghost-mysql | 4m | 428Mi |
+
+### Disk & Container Images
+
+Disk is **91% full** — k3s image garbage collection is failing.
+
+**Largest images on disk**:
+
+| Image | Size | Note |
+|-------|------|------|
+| sentinel (docker-compose build) | 5.88 GB | Old Phase 01 build — **should delete** |
+| viz-bit-habit:latest | 2.81 GB | |
+| booktoss:latest | 2.13 GB | |
+| sentinel:latest | 1.1 GB | Current Phase 00 |
+| seoul-apt-price:latest | 1.21 GB | |
+| jc21/nginx-proxy-manager | 1.12 GB | Not used in k3s — **should delete** |
+| code-server | 846 MB | |
+| daily-seongsu | 832 MB | |
+| mysql:8.0 | 782 MB | |
+
+### ArgoCD & Cert-Manager
+
+| Component | Status |
+|-----------|--------|
+| ArgoCD `bit-habit-base` | Synced, **Healthy** |
+| ArgoCD `bit-habit-apps` | Synced, **Degraded** (due to code-server + oauth2-proxy failures) |
+| ClusterIssuer `letsencrypt-prod` | Ready |
+| Certificate `bit-habit-tls` | Ready |
+| Certificate `tls-secret` | **Not Ready** ⚠️ |
+
+### Storage
+
+| PV | Size | Bound To | Access |
+|----|------|----------|--------|
+| daily-seongsu-data-pv | 1Gi | daily-seongsu-data-pvc | ReadOnlyMany |
+
+No other persistent volumes. Most services are stateless or use in-pod storage
+(ghost-mysql uses container-local storage — data loss on pod restart).
+
+### Issues & Action Items
+
+| # | Issue | Severity | Action |
+|---|-------|----------|--------|
+| 1 | **Disk 91% full**, image GC failing | CRITICAL | Delete old sentinel 5.88GB image, nginx-proxy-manager, dangling images |
+| 2 | **code-server** broken (missing secret) | HIGH | Create `code-server-secret` or remove deployment |
+| 3 | **oauth2-proxy** broken (missing secret) | HIGH | Create `oauth2-proxy-secret` or remove deployment |
+| 4 | **~28 stale pods** (Completed/Unknown) | MEDIUM | `kubectl delete pod --field-selector=status.phase==Succeeded -A` |
+| 5 | **tls-secret** certificate not ready | MEDIUM | Check cert-manager logs, may need re-issue |
+| 6 | **ArgoCD bit-habit-apps** degraded | LOW | Will self-heal once #2 and #3 are fixed |
+| 7 | **ghost-mysql** has no persistent volume | LOW | Data loss risk on pod restart — add PVC if data matters |
+
+### Quick Remediation Commands
+
+```bash
+# 1. Free disk space — delete old sentinel build image
+docker rmi sentinel-real-time-cognitive-assistant-sentinel:latest
+
+# 2. Delete unused nginx-proxy-manager
+docker rmi jc21/nginx-proxy-manager:latest
+
+# 3. Prune all dangling images (Docker + k3s)
+docker image prune -f
+sudo k3s crictl rmi --prune
+
+# 4. Clean up stale pods
+kubectl delete pod --field-selector=status.phase==Succeeded -A
+kubectl delete pod --field-selector=status.phase==Failed -A
+
+# 5. Check disk after cleanup
+df -h /
+
+# 6. Verify cert-manager issue
+kubectl describe certificate tls-secret
+kubectl logs deployment/cert-manager -n cert-manager --tail=20
+```
