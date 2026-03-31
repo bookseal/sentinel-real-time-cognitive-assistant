@@ -145,6 +145,33 @@ def process_audio(audio_data):
 def build_app() -> gr.Blocks:
     # gr.Blocks = a container for laying out Gradio components
     # (like a blank HTML page you fill with widgets)
+
+    # ---- "with" keyword — Context Manager (for C programmers) ----------------
+    #
+    # In C you do:          In Python "with" does it automatically:
+    #
+    #   FILE *f = fopen();     with open("file") as f:
+    #   // use f                   # use f
+    #   fclose(f);                 # fclose() called automatically on exit
+    #
+    # "with X as Y" means:
+    #   1. Call X.__enter__()  → returns Y  (like init/open/acquire)
+    #   2. Run the indented block
+    #   3. Call X.__exit__()   → always runs (like cleanup/close/release)
+    #                            even if an exception is thrown (like finally{})
+    #
+    # Here, gr.Blocks().__enter__() sets a global context so that any
+    # Gradio component created inside the block (gr.Audio, gr.HTML, ...)
+    # is automatically registered as a child of this Blocks container.
+    # On __exit__(), the layout is finalized.
+    #
+    # C analogy:
+    #   gr_blocks *app = gr_blocks_begin("Sentinel");  // __enter__
+    #   gr_add_audio(app, ...);
+    #   gr_add_html(app, ...);
+    #   gr_blocks_end(app);                            // __exit__
+    # --------------------------------------------------------------------------
+
     with gr.Blocks(title="Sentinel — Volume Gauge") as app:
 
         gr.Markdown("# Sentinel\nPhase 00 — Volume Gauge")
