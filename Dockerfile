@@ -42,9 +42,12 @@ COPY . .
 
 # --- Environment Variables ----------------------------------------------------
 # These are defaults — can be overridden at runtime (docker run -e or K8s envFrom)
-ENV GRADIO_SERVER_NAME="0.0.0.0"   # listen on all interfaces (not just localhost)
-ENV GRADIO_SERVER_PORT="7860"       # Gradio's HTTP port
-ENV PYTHONUNBUFFERED="1"            # don't buffer stdout — logs appear immediately
+# GRADIO_SERVER_NAME: listen on all interfaces (not just localhost)
+# GRADIO_SERVER_PORT: Gradio's HTTP port
+# PYTHONUNBUFFERED:   don't buffer stdout — logs appear immediately
+ENV GRADIO_SERVER_NAME="0.0.0.0"
+ENV GRADIO_SERVER_PORT="7860"
+ENV PYTHONUNBUFFERED="1"
 
 # --- Expose Port --------------------------------------------------------------
 # Documentation only — tells readers "this container listens on 7860"

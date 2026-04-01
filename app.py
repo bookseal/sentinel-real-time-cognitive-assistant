@@ -13,6 +13,7 @@
 # =============================================================================
 
 import logging
+import time
 
 import gradio as gr
 import numpy as np
@@ -42,6 +43,10 @@ logger = logging.getLogger("sentinel")   # create a logger named "sentinel"
 # =============================================================================
 WARNING_DB = 60.0    # yellow threshold — elevated voice
 ALERT_DB = 70.0      # red threshold — shouting
+ALERT_DURATION = 10  # seconds — how long the alert banner stays visible
+
+# Persistent alert state — survives across audio chunks
+alert_state = {"until": 0.0, "level": ""}
 
 
 # =============================================================================
@@ -90,10 +95,7 @@ def compute_volume_db(audio: np.ndarray) -> float:
 # HTML Gauge — the visual output sent to the browser
 # =============================================================================
 def generate_gauge_html(db: float) -> str:
-    """Return an HTML string with a colored volume bar.
-
-    Color: green (quiet) → yellow (moderate) → red (loud)
-    """
+    """Return HTML with volume bar + persistent alert banner."""
     if db >= ALERT_DB:
         color, label = "red", "LOUD"
     elif db >= WARNING_DB:
@@ -101,11 +103,24 @@ def generate_gauge_html(db: float) -> str:
     else:
         color, label = "green", "QUIET"
 
-    # Map dB [30~100] → bar width [0%~100%]
     pct = min(max((db - 30) / 70 * 100, 0), 100)
+
+    # Build alert banner if still within the alert window
+    remaining = alert_state["until"] - time.time()
+    banner = ""
+    if remaining > 0:
+        a_color = "red" if alert_state["level"] == "red" else "orange"
+        a_text = "ALERT — Voice Too Loud" if a_color == "red" else "CAUTION — Volume Rising"
+        banner = f"""
+        <div style="padding:12px; margin-bottom:12px; border-radius:8px;
+                    background:{a_color}; color:white; text-align:center;">
+            <strong>{a_text}</strong>
+            <span style="opacity:0.8; margin-left:8px;">({remaining:.0f}s)</span>
+        </div>"""
 
     return f"""
     <div style="padding:16px;">
+        {banner}
         <p><strong>Volume:</strong> {db:.1f} dB — <span style="color:{color};">{label}</span></p>
         <div style="background:#ddd; border-radius:8px; height:24px;">
             <div style="width:{pct:.1f}%; height:100%; background:{color};
@@ -136,6 +151,17 @@ def process_audio(audio_data):
         audio = audio.mean(axis=1).astype(audio.dtype)
 
     db = compute_volume_db(audio)
+
+    # Trigger persistent alert — resets timer on each loud chunk
+    if db >= ALERT_DB:
+        alert_state["until"] = time.time() + ALERT_DURATION
+        alert_state["level"] = "red"
+    elif db >= WARNING_DB:
+        # Only set yellow if not already in a red alert
+        if alert_state["until"] - time.time() <= 0 or alert_state["level"] != "red":
+            alert_state["until"] = time.time() + ALERT_DURATION
+            alert_state["level"] = "yellow"
+
     return generate_gauge_html(db)
 
 
