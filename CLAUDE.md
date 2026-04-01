@@ -23,13 +23,13 @@ Keep code short, readable, and easy to scan — inspired by 42's norminette rule
 Do NOT put phase numbers in branch names. Use tags for milestones.
 
 ### Tags: Semantic Versioning for milestones
-- `v0.0.x` — Phase 00 (minimal volume gauge)
-- `v0.1.x` — Phase 01 (VAD + emotion)
-- `v0.2.x` — Phase 02, etc.
+- `v0.0.x` — v0.0 (minimal volume gauge)
+- `v0.1.x` — v0.1 (VAD + emotion)
+- `v0.2.x` — v0.2, etc.
 
 ### Commits: Conventional Commits
 - `feat: add persistent 10s alert banner`
 - `fix: dockerfile inline comment syntax`
 - `docs: add infrastructure status report`
-- `chore: remove unused Phase 01 files`
+- `chore: remove unused v0.1 files`
 - `refactor: simplify gauge HTML`

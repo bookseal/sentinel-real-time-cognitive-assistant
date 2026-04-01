@@ -26,7 +26,7 @@ Browser Mic → Gradio Streaming → NumPy RMS → dB Gauge + Alert Banner
 
 **Stack:** `gradio` + `numpy` on K3s (Oracle OCI)
 
-> Full build/deploy guide: **[docs/phase-00-guide.md](docs/phase-00-guide.md)**
+> Full build/deploy guide: **[docs/v0.0-guide.md](docs/v0.0-guide.md)**
 
 ---
 
@@ -109,7 +109,7 @@ sentinel-real-time-cognitive-assistant/
 │   ├── ingress.yaml     # Traefik → sentinel.bit-habit.com
 │   └── secret.yaml.example
 └── docs/
-    ├── phase-00-guide.md              # Build, deploy, traffic flow guide
+    ├── v0.0-guide.md              # Build, deploy, traffic flow guide
     └── 2026-03-31_1111_*.md           # Work logs
 ```
 
@@ -125,7 +125,7 @@ sentinel-real-time-cognitive-assistant/
 | `docs/*` | Documentation only |
 
 **Tags** follow [Semantic Versioning](https://semver.org/):
-`v0.0.0` (Phase 00) → `v0.1.0` (Phase 01) → ...
+`v0.0.0` → `v0.1.0` → `v0.2.0` → ...
 
 **Commits** follow [Conventional Commits](https://www.conventionalcommits.org/):
 `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`

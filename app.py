@@ -1,5 +1,5 @@
 # =============================================================================
-# app.py — Phase 00: Minimal Volume Gauge
+# app.py — v0.0: Minimal Volume Gauge
 #
 # Data flow (this is the entire app):
 #
@@ -200,7 +200,7 @@ def build_app() -> gr.Blocks:
 
     with gr.Blocks(title="Sentinel — Volume Gauge") as app:
 
-        gr.Markdown("# Sentinel\nPhase 00 — Volume Gauge")
+        gr.Markdown("# Sentinel\nv0.0 — Volume Gauge")
 
         # Microphone input — streams audio chunks in real-time
         audio_input = gr.Audio(
@@ -234,7 +234,7 @@ def build_app() -> gr.Blocks:
 #   import app           → __name__ is "app"      → skipped (just imports functions)
 
 if __name__ == "__main__":
-    logger.info("Starting Sentinel Phase 00 — Minimal Volume Gauge")
+    logger.info("Starting Sentinel v0.0 — Minimal Volume Gauge")
     app = build_app()
     app.launch(
         server_name="0.0.0.0",   # listen on all interfaces (required in Docker)
