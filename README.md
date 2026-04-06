@@ -3,132 +3,163 @@
 [![Live](https://img.shields.io/badge/Live-sentinel.bit--habit.com-ff1744?style=for-the-badge&logo=kubernetes&logoColor=white)](https://sentinel.bit-habit.com)
 [![K3s](https://img.shields.io/badge/K3s-Oracle_OCI-326ce5?style=flat-square&logo=kubernetes)](https://sentinel.bit-habit.com)
 [![Python](https://img.shields.io/badge/Python-3.10-3776ab?style=flat-square&logo=python)](https://python.org)
-[![Gradio](https://img.shields.io/badge/Gradio-4.0+-f97316?style=flat-square)](https://gradio.app)
+[![Hackathon](https://img.shields.io/badge/Megazone_Cloud-1st_Place-gold?style=flat-square)](https://sentinel.bit-habit.com)
 
-A real-time meeting voice monitor that detects vocal escalation and alerts participants before conversations get out of hand. Built with local-first computation — no cloud API needed for core detection.
+A real-time voice monitor that detects raised voices and alerts people before conversations get out of hand. Built with **local-first computation** — no cloud API needed for core detection.
 
 **Live at https://sentinel.bit-habit.com**
 
----
-
-## Current State: v0.0.x (Volume Gauge)
-
-Streams browser microphone audio, computes volume in real-time, and displays a color-coded gauge with persistent alerts.
-
-```
-Browser Mic → Gradio Streaming → NumPy RMS → dB Gauge + Alert Banner
-```
-
-**Features:**
-- Real-time volume (dB) gauge: green / yellow / red
-- 10-second persistent alert banner when voice is raised
-- Zero cloud API calls — all computation is local
-
-**Stack:** `gradio` + `numpy` on K3s (Oracle OCI)
-
-> Full build/deploy guide: **[docs/v0.0-guide.md](docs/v0.0-guide.md)**
+> **1st Place — Megazone Cloud AI Agent Hackathon**  
+> Weekly mentoring with Infobank CTO to validate tech decisions from a business perspective
 
 ---
 
-## Roadmap
+## Why This Exists
 
-Sentinel is built incrementally. Each version adds a layer of intelligence.
+When couples or coworkers argue, they often don't realize they're raising their voices. And it's awkward for others to point it out.
 
-| Version | Milestone | Status |
-|---------|-----------|--------|
-| **v0.0** | Volume gauge + persistent alert | **Deployed** |
-| v0.1 | VAD-gated emotion detection (Silero + OpenAI Realtime API) | Planned |
-| v0.2 | Speaker diarization + color-coded transcript | Planned |
-| v0.3 | Claim detection + fact-checking (Tavily) | Planned |
-| v0.4 | Multi-modal vision guard (Mediapipe Face Mesh) | Planned |
-| v0.5 | Edge AI migration (local vLLM, $0 token cost) | Planned |
-| v1.0 | Slack/Zoom alerts + autonomous verbal mediation | Planned |
+No existing communication tool provides **real-time feedback on vocal tone**. Sentinel fills that gap — an AI that monitors conversations like a neutral third party and warns when things get heated.
+
+---
+
+## Design Philosophy: Cost First
+
+We chose **local NumPy math** instead of expensive cloud APIs for core detection. LLM APIs will only be added in later versions where AI is actually needed (emotion analysis, etc.).
+
+| Factor | Cloud Speech API | Local NumPy (chosen) |
+|---|---|---|
+| **Cost** | ~$0.06/min | **$0.00** |
+| **Latency** | ~200ms (network) | **< 10ms** |
+| **Privacy** | Audio sent to third party | **Stays on device** |
+| **Availability** | Needs internet + API uptime | **Always works** |
+
+Volume detection doesn't need AI — it's pure signal math.
+
+---
+
+## Current State: v0.1 (Volume + Pitch Guard)
+
+### Features
+
+- **Real-time volume (dB) gauge** — green / yellow / red
+- **10-second persistent alert** — warning stays visible long enough for people to notice
+- **Pitch detection (FFT)** — tracks vocal frequency in 85–400Hz range
+- **Adaptive sensitivity slider** (0.5–2.0) — quiet meeting room vs noisy cafe
+- **Mobile vibration** — device buzzes on alert
+- **Zero cloud API calls** — everything runs locally
+
+### Audio Pipeline
+
+```mermaid
+flowchart LR
+    MIC[Browser Mic] -->|500ms chunks| GS[Gradio Stream]
+    GS --> RS[Resample 16kHz]
+    RS --> RMS[NumPy RMS]
+    RMS --> DB[dB Conversion<br/>+94 SPL offset]
+    DB --> SW[Sliding Window<br/>5 chunks / 2.5s]
+    SW --> TC{Threshold<br/>Check}
+
+    TC --> N["Normal\n< 75 dB"]:::green
+    TC --> W["Warning\n75-85 dB"]:::yellow
+    TC --> R["RED ALERT\n≥ 85 dB"]:::red
+
+    classDef green fill:#00c853,stroke:#00c853,color:#000
+    classDef yellow fill:#ffd600,stroke:#ffd600,color:#000
+    classDef red fill:#ff1744,stroke:#ff1744,color:#fff
+```
+
+### Why a Sliding Window?
+
+| Decision | Value | Why |
+|---|---|---|
+| Window size | 5 chunks (2.5s) | A cough is < 500ms — affects only 1 of 5 readings. Real shouting lasts 1–2 seconds and pushes the average over the threshold |
+| `-inf` filtering | Silence excluded | Quiet moments don't mask loud ones |
+| Alert persistence | 10 seconds | Gives people time to notice and lower their voice |
+| Red > Yellow | No downgrade mid-alert | Red stays red even if a yellow-level sound follows |
+
+### dB Reference
+
+| dB SPL | What it sounds like |
+|---|---|
+| 30 | Whisper, quiet library |
+| 60 | Normal conversation |
+| 75 | Loud talking (**Warning threshold**) |
+| 85 | Shouting, heavy traffic (**Red Alert**, OSHA limit) |
+| 100 | Rock concert |
 
 ---
 
 ## Architecture
 
-```
-Browser (https://sentinel.bit-habit.com)
-   │
-   ▼
-Traefik Ingress (TLS termination)
-   │
-   ▼
-K3s Service :80 → Pod :7860
-   │
-   ▼
-Gradio (streaming mic → 500ms chunks)
-   │
-   ▼
-NumPy RMS → dB → HTML gauge update
-```
+### Request Lifecycle
 
-**Future layers** (v0.1+) will add: Silero VAD → OpenAI Realtime API → emotion scoring → Sentinel Index.
+```mermaid
+flowchart TB
+    subgraph Internet
+        BROWSER["Browser\nhttps://sentinel.bit-habit.com"]
+    end
 
----
+    subgraph Cluster["k3s Cluster (OCI Ampere A1)"]
+        TRAEFIK["Traefik Ingress\nTLS termination\n(Let's Encrypt wildcard)"]
+        SVC["Service\nsentinel-svc :80"]
+        POD["Pod\nsentinel:latest :7860"]
+    end
 
-## Quick Start
+    BROWSER -->|HTTPS :443| TRAEFIK
+    TRAEFIK -->|HTTP :80| SVC
+    SVC -->|:7860| POD
 
-```bash
-# Clone
-git clone git@github.com:bookseal/sentinel-real-time-cognitive-assistant.git
-cd sentinel-real-time-cognitive-assistant
+    subgraph App["app.py"]
+        GRADIO["Gradio Server\nbuild_app()"]
+        AUDIO["process_audio_chunk()"]
+        LOGIC["audio_logic.py\nRMS, Pitch, Threshold"]
+        HTML["generate_status_html()\nGauge + Alert Banner"]
+    end
 
-# Run locally
-pip install -r requirements.txt
-python app.py
-# Open http://localhost:7860
-
-# Or via Docker
-docker build -t sentinel:latest .
-docker run -p 7860:7860 sentinel:latest
+    POD --> GRADIO
+    GRADIO -->|"WebSocket\n500ms chunks"| AUDIO
+    AUDIO --> LOGIC
+    LOGIC --> HTML
+    HTML -->|"WebSocket push"| BROWSER
 ```
 
-### Deploy to K3s
+### Real-time Streaming
 
-```bash
-docker build -t sentinel:latest .
-docker save sentinel:latest | sudo k3s ctr images import -
-kubectl rollout restart deployment/sentinel
-```
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant G as Gradio
+    participant P as process_audio_chunk()
+    participant RMS as get_rms_db()
+    participant CVT as check_volume_threshold()
+    participant UI as generate_status_html()
 
----
-
-## Project Structure
-
-```
-sentinel-real-time-cognitive-assistant/
-├── app.py               # Gradio app — mic streaming + volume gauge + alert
-├── requirements.txt     # gradio, numpy
-├── Dockerfile           # Python 3.10 slim + ffmpeg
-├── CLAUDE.md            # Claude Code project instructions
-├── k8s/
-│   ├── deployment.yaml  # Pod spec (resources, probes)
-│   ├── service.yaml     # ClusterIP :80 → :7860
-│   ├── ingress.yaml     # Traefik → sentinel.bit-habit.com
-│   └── secret.yaml.example
-└── docs/
-    ├── v0.0-guide.md              # Build, deploy, traffic flow guide
-    └── 2026-03-31_1111_*.md           # Work logs
+    B->>G: audio_data (sample_rate, np.ndarray)
+    G->>P: stream callback (every 500ms)
+    P->>P: resample to 16kHz if needed
+    P->>RMS: get_rms_db(audio_16k)
+    RMS-->>P: volume_db (float)
+    P->>CVT: check_volume_threshold(history, volume_db)
+    CVT-->>P: {alert_level, avg_db, peak_db}
+    P->>UI: generate_status_html(app_state)
+    UI-->>B: Updated HTML via WebSocket
 ```
 
 ---
 
-## Git Workflow
+## Roadmap
 
-| Branch pattern | Purpose |
-|---------------|---------|
-| `main` | Production — deployed to K3s |
-| `feature/*` | New features (`feature/persistent-alert`) |
-| `fix/*` | Bug fixes |
-| `docs/*` | Documentation only |
+Each version adds a new layer of intelligence.
 
-**Tags** follow [Semantic Versioning](https://semver.org/):
-`v0.0.0` → `v0.1.0` → `v0.2.0` → ...
-
-**Commits** follow [Conventional Commits](https://www.conventionalcommits.org/):
-`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`
+| Version | Milestone | Status |
+|---------|-----------|--------|
+| **v0.0** | Volume gauge + 10s persistent alert | **Deployed** |
+| **v0.1** | Pitch detection + adaptive sensitivity + mobile vibration | **Deployed** |
+| v0.2 | VAD-gated emotion detection (Silero + OpenAI Realtime API) | Planned |
+| v0.3 | Speaker diarization + color-coded transcript | Planned |
+| v0.4 | Claim detection + fact-checking (Tavily) | Planned |
+| v0.5 | Edge AI migration (local vLLM, $0 token cost) | Planned |
+| v1.0 | Slack/Zoom alerts + autonomous verbal mediation | Planned |
 
 ---
 
@@ -136,12 +167,80 @@ sentinel-real-time-cognitive-assistant/
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| Frontend | Gradio 4.0+ | Native Python streaming, rapid prototyping |
-| Audio | NumPy | RMS/dB calculation, zero dependencies |
+| Frontend | Gradio 4.0+ | Python-native streaming, fast prototyping |
+| Audio Math | NumPy | RMS/dB/FFT, zero dependencies, < 10ms |
 | Container | Docker + Python 3.10 slim | Lightweight, reproducible |
 | Orchestration | K3s on Oracle OCI | Free tier, production Kubernetes |
-| Ingress | Traefik + cert-manager | Auto TLS via Let's Encrypt |
-| GitOps | ArgoCD (cluster-level) | Declarative deployment |
+| Ingress | Traefik + cert-manager | Auto TLS via Let's Encrypt wildcard |
+| GitOps | ArgoCD | Declarative deployment, auto-sync |
+
+---
+
+## Project Structure
+
+```
+sentinel-real-time-cognitive-assistant/
+├── app.py               # Gradio app — streaming + gauge + alert
+├── audio_logic.py       # RMS, dB, pitch (FFT), threshold logic
+├── vad.py               # Voice Activity Detection (future)
+├── audio_buffer.py      # Circular buffer for speech chunks (future)
+├── requirements.txt     # gradio, numpy
+├── Dockerfile
+├── CLAUDE.md            # Claude Code project instructions
+├── k8s/
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── ingress.yaml
+│   └── secret.yaml.example
+└── docs/
+    ├── guide-v0.0-volume-gauge.md
+    ├── guide-v0.1-pitch-guard.md
+    └── guide-request-lifecycle.md
+```
+
+---
+
+## Quick Start
+
+```bash
+# Run locally
+git clone git@github.com:bookseal/sentinel-real-time-cognitive-assistant.git
+cd sentinel-real-time-cognitive-assistant
+pip install -r requirements.txt
+python app.py
+# Open http://localhost:7860
+
+# Or via Docker
+docker build -t sentinel:latest .
+docker run -p 7860:7860 sentinel:latest
+
+# Deploy to K3s
+docker save sentinel:latest | sudo k3s ctr images import -
+kubectl rollout restart deployment/sentinel
+```
+
+---
+
+## Git Workflow
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Production (deployed to K3s) |
+| `feature/*` | New features |
+| `fix/*` | Bug fixes |
+| `docs/*` | Documentation only |
+
+Tags: [Semantic Versioning](https://semver.org/) · Commits: [Conventional Commits](https://www.conventionalcommits.org/)
+
+---
+
+## Docs
+
+| Document | What's inside |
+|----------|---------------|
+| [v0.0 Guide](docs/guide-v0.0-volume-gauge.md) | Build, deploy, traffic flow, k8s concepts |
+| [v0.1 Flow](docs/guide-v0.1-pitch-guard.md) | RMS math, sliding window, edge cases |
+| [Request Lifecycle](docs/guide-request-lifecycle.md) | Full trace: browser → TLS → k8s → HTML |
 
 ---
 
