@@ -26,7 +26,7 @@ Browser Mic → Gradio Streaming → NumPy RMS → dB Gauge + Alert Banner
 
 **Stack:** `gradio` + `numpy` on K3s (Oracle OCI)
 
-> Full build/deploy guide: **[docs/v0.0-guide.md](docs/v0.0-guide.md)**
+> Full build/deploy guide: **[docs/guide-v0.0-volume-gauge.md](docs/guide-v0.0-volume-gauge.md)**
 
 ---
 
@@ -109,8 +109,10 @@ sentinel-real-time-cognitive-assistant/
 │   ├── ingress.yaml     # Traefik → sentinel.bit-habit.com
 │   └── secret.yaml.example
 └── docs/
-    ├── v0.0-guide.md              # Build, deploy, traffic flow guide
-    └── 2026-03-31_1111_*.md           # Work logs
+    ├── guide-v0.0-volume-gauge.md   # Build, deploy, traffic flow guide
+    ├── guide-request-lifecycle.md   # Browser → K8s → HTML request flow
+    ├── worklog-v0.0-deploy.md       # v0.0 deploy work log
+    └── worklog-v0.1-alert-banner.md # Alert banner work log
 ```
 
 ---

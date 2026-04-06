@@ -29,8 +29,8 @@ First working deployment. Minimal volume gauge on K3s (Oracle OCI).
 - Gradio 4.0+ streaming UI with NumPy RMS computation
 - Dockerfile for containerized deployment (Python 3.10-slim + ffmpeg)
 - K8s manifests for k3s deployment (Deployment, Service, Ingress)
-- Build/deploy guide (`docs/v0.0-guide.md`)
-- Request lifecycle documentation (`docs/request-lifecycle.md`)
+- Build/deploy guide (`docs/guide-v0.0-volume-gauge.md`)
+- Request lifecycle documentation (`docs/guide-request-lifecycle.md`)
 - Infrastructure status work log
 
 ### Fixed

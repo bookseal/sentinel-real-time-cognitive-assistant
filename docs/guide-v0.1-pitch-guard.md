@@ -210,7 +210,7 @@ Implementation details:
 |---|---|---|---|
 | `audio_logic.py` | RMS calculation, dB conversion, threshold logic | New (v0.1) | ~183 |
 | `app.py` | Volume guard integration, Red Alert UI, dB meter | Modified (+81 lines) | ~722 |
-| `docs/v0.1-flow.md` | This documentation | New | ~400 |
+| `docs/guide-v0.1-pitch-guard.md` | This documentation | New | ~400 |
 
 ### Code Walkthrough
 
