@@ -54,13 +54,16 @@ spec:
 
           # ---- Resources (CPU & Memory) --------------------------------------
           # requests = guaranteed minimum; limits = hard ceiling
+          # NOTE: This is a reference copy. Real manifests are in
+          # bookseal/bit-habit-infra — update there for actual deployment.
+          # v0.2 needs more memory for Silero VAD (ONNX) + OpenAI client.
           resources:
             requests:
               cpu: "200m"             # 200 millicores = 0.2 CPU (guaranteed)
-              memory: "512Mi"         # 512 MiB RAM (guaranteed)
+              memory: "768Mi"         # 768 MiB RAM (guaranteed) — v0.2: VAD model
             limits:
-              cpu: "500m"             # max 0.5 CPU — throttled if exceeded
-              memory: "1Gi"           # max 1 GiB RAM — OOMKilled if exceeded
+              cpu: "1000m"            # max 1.0 CPU — VAD inference needs headroom
+              memory: "1536Mi"        # max 1.5 GiB RAM — OOMKilled if exceeded
 
           # ---- Health Checks -------------------------------------------------
           # livenessProbe: "is the process alive?" — restart if it fails

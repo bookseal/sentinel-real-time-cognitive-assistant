@@ -1,2 +1,4 @@
 gradio>=4.0
 numpy
+silero-vad
+openai>=1.0

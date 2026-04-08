@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0.0] - 2026-04-08
+
+VAD-gated emotion detection. Sentinel can now tell the difference between a cough and an argument.
+
+### Added
+- Voice Activity Detection via Silero VAD (ONNX, 1.8MB, ~1ms per chunk)
+- Emotion classification via OpenAI API (calm/stressed/angry)
+- Per-session state isolation (SessionState class) for multi-user support
+- Ring buffer with 300ms pre-roll, 1.5-2s voiced accumulation, 500ms hangover
+- Background VAD model loading (app starts instantly, degrades to v0.1 while loading)
+- Fire-and-forget emotion inference in ThreadPoolExecutor (non-blocking UI)
+- Emotion label in gauge HTML (color-coded: green=calm, orange=stressed, red=angry)
+- Full pytest test suite: 45 tests across 5 modules (0% to 90%+ coverage)
+- TODOS.md for tracking deferred work
+- VERSION file for semantic versioning
+
+### Changed
+- Extracted `audio_logic.py` from app.py (norminette: max 7 functions per file)
+- Rewritten app.py: v0.2 pipeline, cleaned teaching comments, updated header diagram
+- Dockerfile updated for Silero VAD + OpenAI (no PyTorch, image stays ~400MB)
+- K8s deployment.yaml resource limits updated for VAD model memory
+- requirements.txt: added silero-vad, openai
+
+### Fixed
+- Resample function now handles empty arrays and invalid sample rates
+- Audio buffer copies chunks to prevent mutation by caller
+- WAV encoding clips audio to [-1, 1] and handles NaN/Inf
+
 ## [Unreleased]
 
 ### Added
