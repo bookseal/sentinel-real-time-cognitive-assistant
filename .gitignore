@@ -15,3 +15,5 @@ __pycache__/
 .idea/
 .gradio/
 .gstack/
+venv/
+.claude/settings.local.json
