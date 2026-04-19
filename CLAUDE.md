@@ -34,6 +34,46 @@ Do NOT put phase numbers in branch names. Use tags for milestones.
 - `chore: remove unused v0.1 files`
 - `refactor: simplify gauge HTML`
 
+## Development Workflow — Balanced with Claude Code
+
+This project is built step-by-step as a learning portfolio. Claude Code is a
+co-pilot, not an autopilot. The workflow balances speed with understanding.
+
+### Per-issue cycle
+
+1. **Goal** — I state what I want to build (one sentence)
+2. **Scaffold** — Claude generates working code or a starting point
+3. **Understand** — I read every line. If something is unclear, I ask "why?"
+4. **Modify** — I adjust to my style, rename variables, add my own touches
+5. **Test** — `python app.py` (or pytest) after every change
+6. **Commit** — only code I can explain. `git add <specific files>`, never `git add .`
+7. **PR + review** — Claude runs the review skill, I read findings, fix if needed
+8. **Merge + close** — squash merge, pull main, close issue with learning summary
+
+### Principles
+
+- **Don't commit code I can't explain.** Claude can write it, but I must understand it before it enters main.
+- **Ask "why?" freely.** No question is too basic. Understanding > speed.
+- **Print-first debugging.** When unsure what data looks like, `print()` it before writing logic.
+- **Spike → implement.** For unfamiliar APIs, explore first (30 min), then plan. Don't write detailed checklists for things you haven't tried.
+- **Small PRs, single purpose.** One issue = one branch = one PR. Each PR should be reviewable in under 5 minutes.
+- **Learning notes in every PR.** The "Learning notes" section in PR body is mandatory — it's the portfolio's voice.
+
+### What Claude should do
+
+- Generate code scaffolds when asked
+- Explain concepts using C analogies (user has 2+ years of C background)
+- Fix bugs directly (edit the file) rather than just describing what to change
+- Keep explanations concise — teach the concept, not the textbook
+- Flag security/performance issues proactively in reviews
+
+### What Claude should NOT do
+
+- Write full solutions without being asked — offer scaffolds and let user fill gaps
+- Give 30-minute reading assignments (`help()`, docs deep-dives) as the first step
+- Over-explain when user says "했다" (done) — move to next step quickly
+- Add features beyond what the current issue asks for
+
 ## Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill
