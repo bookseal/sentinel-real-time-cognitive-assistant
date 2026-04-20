@@ -13,7 +13,7 @@ def compute_volume_db(audio):
     
     audio_f = audio.astype(np.float32)
     if np.issubdtype(original_dtype, np.integer):
-        audio_f = audio_f / max(np.iinfo(audio.dtype).max, 1)
+        audio_f = audio_f / max(np.iinfo(original_dtype).max, 1)
 
     rms = float(np.sqrt(np.mean(audio_f ** 2)))
     if rms < 1e-10:
