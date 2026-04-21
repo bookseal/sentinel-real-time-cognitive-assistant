@@ -1,5 +1,6 @@
 import gradio as gr
 import numpy as np
+import time
 
 def generate_gauge_html(db):
     """Return HTML with volume bar + color label."""
@@ -24,6 +25,14 @@ def generate_gauge_html(db):
     </div>
     """
 
+WARNING_DB = 60.0
+ALERT_DB = 70.0
+ALERT_DURATION = 10
+
+class SessionState:
+    def __init__(self):
+        self.alert_until = 0.0
+        self.alert_level = ""
 
 def compute_volume_db(audio):
     """Convert raw audio samples to decibels (dB)."""
@@ -45,21 +54,24 @@ def compute_volume_db(audio):
     db = 20 * np.log10(rms) + 94
     return max(db, 0.0)
 
-def process_audio(audio_data):
+def process_audio(audio_data, state):
+    if state is None:
+        state = SessionState()
     if audio_data is None:
-        return generate_gauge_html(0)
+        return generate_gauge_html(0), state
     sample_rate, audio = audio_data
     db = compute_volume_db(audio)
-    return generate_gauge_html(db)
+    return generate_gauge_html(db), state
 
-with gr.Blocks() as app:
+with gr.Blocks(title = "Sentinel") as app:
     gr.Markdown("# Sentinel - Volume Monitor")
     audio_input = gr.Audio(sources="microphone", streaming=True, type="numpy")
     output = gr.HTML(value=generate_gauge_html(0))
+    session_state = gr.State(value=None)
     audio_input.stream(
         fn=process_audio,
-        inputs=[audio_input],
-        outputs=[output],
+        inputs=[audio_input, session_state],
+        outputs=[output, session_state],
     )
 
 if __name__ == "__main__":
