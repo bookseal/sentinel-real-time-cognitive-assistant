@@ -2,7 +2,7 @@ import gradio as gr
 import numpy as np
 import time
 
-def generate_gauge_html(db):
+def generate_gauge_html(db, state=None):
     """Return HTML with volume bar + color label."""
     if db >= 70:
         color, label = "red", "LOUD"
@@ -61,6 +61,15 @@ def process_audio(audio_data, state):
         return generate_gauge_html(0), state
     sample_rate, audio = audio_data
     db = compute_volume_db(audio)
+
+    if db >= ALERT_DB:
+        state.alert_until = time.time() + ALERT_DURATION
+        state.alert_level = "red"
+    elif db >= WARNING_DB:
+        if state.alert_until - time.time() <= 0 or state.alert_level != "red":
+            state.alert_until = time.time() + ALERT_DURATION
+            state.alert_level = "yellow"
+
     return generate_gauge_html(db), state
 
 with gr.Blocks(title = "Sentinel") as app:
