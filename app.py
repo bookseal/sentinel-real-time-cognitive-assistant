@@ -1,6 +1,30 @@
 import gradio as gr
 import numpy as np
 
+def generate_gauge_html(db):
+    """Return HTML with volume bar + color label."""
+    if db >= 70:
+        color, label = "red", "LOUD"
+    elif db >= 60:
+        color, label = "orange", "MODERATE"
+    else:
+        color, label = "green", "QUIET"
+
+    pct = min(max((db - 30) / 70 * 100, 0), 100)
+
+    return f"""
+    <div style="padding:16px;">
+        <p><strong>Volume:</strong> {db:.1f} dB -
+            <span style="color:{color};">{label}</span></p>
+        <div style="background:#ddd; border-radius:8px; height:24px;">
+            <div style="width:{pct:.1f}%; height:100%; background:{color};
+                border-radius:8px; transition:width 0.15s;">
+            </div>
+        </div>
+    </div>
+    """
+
+
 def compute_volume_db(audio):
     """Convert raw audio samples to decibels (dB)."""
     if len(audio) == 0:
@@ -23,15 +47,15 @@ def compute_volume_db(audio):
 
 def process_audio(audio_data):
     if audio_data is None:
-        return "Waiting for audio..."
+        return generate_gauge_html(0)
     sample_rate, audio = audio_data
     db = compute_volume_db(audio)
-    return f"Volume: {db:.1f} dB"
+    return generate_gauge_html(db)
 
 with gr.Blocks() as app:
     gr.Markdown("# Sentinel - Volume Monitor")
     audio_input = gr.Audio(sources="microphone", streaming=True, type="numpy")
-    output = gr.Markdown("Waiting for audio...")
+    output = gr.HTML(value=generate_gauge_html(0))
     audio_input.stream(
         fn=process_audio,
         inputs=[audio_input],
