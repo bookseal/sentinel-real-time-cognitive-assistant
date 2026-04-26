@@ -1,6 +1,7 @@
 import time
 import gradio as gr
 import numpy as np
+from audio_logic import compute_volume_db
 
 WARNING_DB = 60.0
 ALERT_DB = 70.0
@@ -49,13 +50,13 @@ def generate_gauge_html(db, state=None):
     """
 
 
-def process_audio(audio_data, state):
+def process_audio(audio_data, state, sensitivity):
     if state is None:
         state = SessionState()
     if audio_data is None:
         return generate_gauge_html(0), state
     sample_rate, audio = audio_data
-    db = compute_volume_db(audio)
+    db = compute_volume_db(audio) * sensitivity
 
     if db >= ALERT_DB:
         state.alert_until = time.time() + ALERT_DURATION
@@ -70,11 +71,15 @@ def process_audio(audio_data, state):
 with gr.Blocks(title="Sentinel") as app:
     gr.Markdown("# Sentinel - Volume Monitor")
     audio_input = gr.Audio(sources="microphone", streaming=True, type="numpy")
+    sensitivity = gr.Slider(
+        minimum=0.5, maximum=2.0, value=1.0, step=0.1,
+        label="Sensitivity",
+    )
     output = gr.HTML(value=generate_gauge_html(0))
     session_state = gr.State(value=None)
     audio_input.stream(
         fn=process_audio,
-        inputs=[audio_input, session_state],
+        inputs=[audio_input, session_state, sensitivity],
         outputs=[output, session_state],
     )
 
